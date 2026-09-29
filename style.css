@@ -1,0 +1,19 @@
+.no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        .btn-active:active { transform: scale(0.96); transition: transform 0.1s; }
+        @keyframes flash {
+            0%, 100% { background-color: #fca5a5; color: #991b1b; }
+            50% { background-color: #ef4444; color: white; }
+        }
+        .timer-warning { animation: flash 1s infinite; }
+        input[type="time"]::-webkit-calendar-picker-indicator { display: none; }
+        .filter-active { background-color: #0f766e; color: white; border-color: #0f766e; }
+        .filter-inactive { background-color: #1e293b; color: #94a3b8; border-color: #334155; }
+        .fade-in { animation: fadeIn 0.2s ease-in; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        .case-locked { filter: grayscale(0.15); }
+        .readonly-time { min-width: 74px; }
+        @media (max-width: 420px) {
+            .case-info-text { font-size: 10px; }
+            .case-info-btn { padding-left: 8px; padding-right: 8px; }
+        }

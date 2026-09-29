@@ -1,3 +1,5 @@
+// CPRNOTE V17.3 - 管理者後台修正版
+const CPRNOTE_APP_VERSION = "17.3.0";
 // CPRNOTE V17.1 - cache refresh build
 // --- 全域變數 ---
         let isRunning = false;
@@ -2831,11 +2833,42 @@ async function initDesktopSession() {
     const roleName = profile.role === 'admin' ? '管理者' : profile.role === 'head_nurse' ? '護理長' : '單位帳號';
     document.getElementById('desktop-role-label').innerText = `${roleName}｜${profile.username}`;
     document.getElementById('desktop-history-title').innerText = profile.role === 'unit' ? '近 3 天 CPR 紀錄' : '歷史 CPR 紀錄';
-    document.getElementById('nav-unit-settings').classList.toggle('hidden', profile.role !== 'head_nurse');
-    document.getElementById('nav-admin').classList.toggle('hidden', profile.role !== 'admin');
+    applyDesktopRoleNavigation('monitor');
     switchDesktopView('monitor');
     await refreshDesktopDashboard(false);
     subscribeDesktopRealtime();
+}
+
+function applyDesktopRoleNavigation(view = v17CurrentDesktopView) {
+    const unitBtn = document.getElementById('nav-unit-settings');
+    const adminBtn = document.getElementById('nav-admin');
+    const monitorBtn = document.getElementById('nav-monitor');
+    const role = desktopProfile?.role || '';
+
+    // 角色按鈕顯示權限：管理者不顯示上方「單位設定」，要從管理者後台選單位進入。
+    if (unitBtn) {
+        const canSeeUnitButton = role === 'head_nurse';
+        unitBtn.classList.toggle('hidden', !canSeeUnitButton);
+        unitBtn.style.display = canSeeUnitButton ? '' : 'none';
+    }
+    if (adminBtn) {
+        const canSeeAdminButton = role === 'admin';
+        adminBtn.classList.toggle('hidden', !canSeeAdminButton);
+        adminBtn.style.display = canSeeAdminButton ? '' : 'none';
+    }
+    if (monitorBtn) monitorBtn.style.display = '';
+
+    const adminUnitMode = role === 'admin' && !!v17AdminEditingUnit;
+    document.querySelectorAll('.desktop-main-nav').forEach(btn => {
+        const active = (btn.id === 'nav-monitor' && view === 'monitor')
+          || (btn.id === 'nav-unit-settings' && view === 'unit' && role === 'head_nurse')
+          || (btn.id === 'nav-admin' && (view === 'admin' || (view === 'unit' && adminUnitMode)));
+        // 不再覆寫整個 className，避免把 hidden 權限類別洗掉。
+        btn.classList.toggle('bg-blue-600', active);
+        btn.classList.toggle('text-white', active);
+        btn.classList.toggle('bg-slate-800', !active);
+        btn.classList.toggle('text-slate-200', !active);
+    });
 }
 
 function switchDesktopView(view) {
@@ -2853,14 +2886,14 @@ function switchDesktopView(view) {
     monitorPanel.style.display = view === 'monitor' ? '' : 'none';
     unitPanel.style.display = view === 'unit' ? '' : 'none';
     adminPanel.style.display = view === 'admin' ? '' : 'none';
-    document.querySelectorAll('.desktop-main-nav').forEach(btn => {
-        const active = (btn.id === 'nav-monitor' && view==='monitor')
-          || (btn.id==='nav-unit-settings' && view==='unit' && desktopProfile?.role==='head_nurse')
-          || (btn.id==='nav-admin' && (view==='admin' || (view==='unit' && adminUnitMode)));
-        btn.className = `desktop-main-nav px-4 py-2 rounded-lg text-sm font-bold whitespace-nowrap ${active ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-200'}`;
-    });
+    applyDesktopRoleNavigation(view);
     if(view === 'unit') loadHeadNurseSettings();
-    if(view === 'admin') switchAdminSection(v17AdminSection || 'units');
+    if(view === 'admin') {
+        const root = document.getElementById('admin-section-content');
+        if (root) root.innerHTML = '<div class="text-center text-slate-400 py-10"><i class="fa-solid fa-spinner fa-spin mr-1"></i>讀取管理者後台...</div>';
+        // 下一個畫面週期再載入，確保面板已解除 hidden / display:none。
+        requestAnimationFrame(() => switchAdminSection(v17AdminSection || 'units'));
+    }
 }
 
 async function loadHeadNurseSettings() {
@@ -2968,7 +3001,33 @@ async function changeOwnUnitPassword(){ const settingsUnit=getV17SettingsUnit();
 function alertV17(msg,error=false){ desktopFlashLiveBadge(error?'操作失敗':'已儲存',error); const el=document.getElementById('desktop-last-sync'); if(el)el.innerText=msg; }
 function renderAuditList(list){ if(!list.length)return '<div class="text-sm text-slate-400 py-4">尚無設定紀錄</div>'; return `<div class="space-y-2">${list.map(x=>`<div class="text-sm border-b border-slate-100 pb-2"><b>${escapeHtml(x.actor_username||'系統')}</b>｜${escapeHtml(x.action)}<div class="text-xs text-slate-400">${formatDesktopDate(x.created_at)}</div></div>`).join('')}</div>`; }
 
-function switchAdminSection(section){ if(desktopProfile?.role!=='admin')return; v17AdminSection=section; document.querySelectorAll('.admin-section-btn').forEach(b=>{const active=b.dataset.adminSection===section;b.className=`admin-section-btn px-4 py-2 rounded-lg font-bold text-sm ${active?'bg-blue-600 text-white':'bg-slate-100 text-slate-700'}`;}); if(section==='units')loadAdminUnits(); if(section==='headnurses')loadAdminHeadNurses(); if(section==='medications')loadAdminMedications(); if(section==='rhythms')loadAdminRhythms(); if(section==='tubes')loadAdminTubesBlood(); if(section==='audit')loadAdminAudit(); }
+function switchAdminSection(section){
+    if(desktopProfile?.role!=='admin') return;
+    v17AdminSection=section;
+    const root=adminRoot();
+    if(!root){ console.error('V17.3 admin-section-content not found'); return; }
+    document.querySelectorAll('.admin-section-btn').forEach(b=>{
+        const active=b.dataset.adminSection===section;
+        b.className=`admin-section-btn px-4 py-2 rounded-lg font-bold text-sm ${active?'bg-blue-600 text-white':'bg-slate-100 text-slate-700'}`;
+    });
+    try {
+        let task;
+        if(section==='units') task=loadAdminUnits();
+        else if(section==='headnurses') task=loadAdminHeadNurses();
+        else if(section==='medications') task=loadAdminMedications();
+        else if(section==='rhythms') task=loadAdminRhythms();
+        else if(section==='tubes') task=loadAdminTubesBlood();
+        else if(section==='audit') task=loadAdminAudit();
+        else task=loadAdminUnits();
+        Promise.resolve(task).catch(err=>{
+            console.error('V17.3 admin load error',err);
+            root.innerHTML=`<div class="bg-red-50 border border-red-200 text-red-700 p-4 rounded-xl font-bold">管理者後台讀取失敗：${escapeHtml(err?.message||String(err))}</div>`;
+        });
+    } catch(err) {
+        console.error('V17.3 admin switch error',err);
+        root.innerHTML=`<div class="bg-red-50 border border-red-200 text-red-700 p-4 rounded-xl font-bold">管理者後台讀取失敗：${escapeHtml(err?.message||String(err))}</div>`;
+    }
+}
 function adminRoot(){return document.getElementById('admin-section-content');}
 
 async function loadAdminUnits(){

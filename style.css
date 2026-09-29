@@ -1,3 +1,4 @@
+/* CPRNOTE V17.3 - 管理者後台修正版 */
 .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
         .btn-active:active { transform: scale(0.96); transition: transform 0.1s; }
@@ -30,4 +31,11 @@
 @media (max-width: 1100px) {
   #desktop-monitor-panel .grid-cols-12 > aside { grid-column: span 12 / span 12; }
   #desktop-monitor-panel .grid-cols-12 > section { grid-column: span 12 / span 12; }
+}
+
+/* V17.3：讓目前部署版本可直接從電腦版標題列確認 */
+.v17-version-pill {
+  display:inline-flex; align-items:center; padding:.15rem .45rem; border-radius:999px;
+  font-size:.62rem; line-height:1; font-weight:800; color:#cbd5e1;
+  background:rgba(51,65,85,.75); border:1px solid rgba(148,163,184,.25);
 }

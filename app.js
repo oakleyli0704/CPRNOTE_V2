@@ -2684,3 +2684,329 @@ setInterval(() => {
 }, 2000);
 setInterval(updateDesktopDurations, 1000);
 initV16();
+
+
+// ============================================================
+// V17：護理長 / 管理者後台 + 臨床設定動態化
+// ============================================================
+var v17ClinicalConfig = null;
+var v17CurrentDesktopView = 'monitor';
+var v17AdminSection = 'units';
+var v17UnitsCache = [];
+var v17MixSolutions = [];
+var v17MixVolumes = [];
+var v17AdminMedAssociations = { solutions:{}, volumes:{} };
+
+// 密碼預設隱藏時顯示「閉眼」；點一下顯示密碼後改成開眼
+function togglePasswordVisibility(inputId, iconId) {
+    const input = document.getElementById(inputId);
+    const icon = document.getElementById(iconId);
+    if(!input || !icon) return;
+    const hidden = input.type === 'password';
+    input.type = hidden ? 'text' : 'password';
+    icon.className = hidden ? 'fa-solid fa-eye' : 'fa-solid fa-eye-slash';
+}
+
+async function invokeV17UserAdmin(body) {
+    const { data, error } = await supabaseClient.functions.invoke('cpr-user-admin', { body });
+    if(error) throw error;
+    if(data && data.error) throw new Error(data.error);
+    return data;
+}
+
+function showHeadNurseRegister(show) {
+    const box = document.getElementById('head-nurse-register');
+    if(!box) return;
+    box.classList.toggle('hidden', !show);
+    if(show) loadV17RegistrationUnits();
+}
+
+async function loadV17RegistrationUnits() {
+    try {
+        const { data, error } = await supabaseClient.rpc('list_active_units');
+        if(error) throw error;
+        const sel = document.getElementById('hn-reg-unit');
+        sel.innerHTML = (data || []).map(u => `<option value="${escapeHtml(u.code)}">${escapeHtml(u.code)}${u.name && u.name!==u.code ? '｜'+escapeHtml(u.name):''}</option>`).join('');
+    } catch(err) {
+        document.getElementById('hn-reg-unit').innerHTML = '<option>單位讀取失敗</option>';
+    }
+}
+
+function setHNRegMessage(msg, ok=false) {
+    const el = document.getElementById('hn-reg-message');
+    el.className = `text-sm font-bold p-3 rounded-xl ${ok ? 'bg-emerald-50 border border-emerald-200 text-emerald-700' : 'bg-red-50 border border-red-200 text-red-700'}`;
+    el.innerText = msg;
+    el.classList.remove('hidden');
+}
+
+async function submitHeadNurseRegistration() {
+    const username = document.getElementById('hn-reg-username').value.trim().toUpperCase();
+    const displayName = document.getElementById('hn-reg-name').value.trim();
+    const employeeNo = document.getElementById('hn-reg-employee').value.trim();
+    const unitCode = document.getElementById('hn-reg-unit').value;
+    const password = document.getElementById('hn-reg-password').value;
+    const password2 = document.getElementById('hn-reg-password2').value;
+    if(!username || !displayName || !employeeNo || !unitCode || !password) return setHNRegMessage('請完整填寫申請資料。');
+    if(password.length < 8) return setHNRegMessage('密碼至少需要 8 碼。');
+    if(password !== password2) return setHNRegMessage('兩次密碼輸入不一致。');
+    try {
+        await invokeV17UserAdmin({ action:'register_head_nurse', username, displayName, employeeNo, unitCode, password });
+        setHNRegMessage('申請已送出，請等待管理者審核。', true);
+        ['hn-reg-username','hn-reg-name','hn-reg-employee','hn-reg-password','hn-reg-password2'].forEach(id => document.getElementById(id).value='');
+    } catch(err) {
+        setHNRegMessage(err.message || '申請失敗。');
+    }
+}
+
+// 同一個登入框：先嘗試單位帳號，再嘗試護理長/管理者帳號
+async function desktopLogin() {
+    const username = document.getElementById('desktop-username').value.trim().toUpperCase();
+    const password = document.getElementById('desktop-password').value;
+    if(!username) return desktopSetLoginError('請輸入帳號');
+    if(!password) return desktopSetLoginError('請輸入密碼');
+    desktopSetLoginError('');
+    const btn = document.getElementById('desktop-login-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i> 登入中...';
+    try {
+        const attempts = [
+            `${username.toLowerCase()}@unit.cpr.local`,
+            `${username.toLowerCase()}@staff.cpr.local`
+        ];
+        let signed = false;
+        for(const email of attempts) {
+            const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
+            if(!error) { signed = true; break; }
+        }
+        if(!signed) throw new Error('LOGIN_FAILED');
+        await initDesktopSession();
+    } catch(err) {
+        console.error(err);
+        desktopSetLoginError('帳號或密碼錯誤，或帳號尚未核准。');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa-solid fa-right-to-bracket mr-1"></i> 登入';
+    }
+}
+
+async function initDesktopSession() {
+    const { data:{ session } } = await supabaseClient.auth.getSession();
+    if(!session) {
+        document.getElementById('desktop-login').classList.remove('hidden');
+        document.getElementById('desktop-dashboard').classList.add('hidden');
+        return;
+    }
+    const { data: profile, error } = await supabaseClient.from('profiles').select('*').eq('user_id', session.user.id).single();
+    if(error || !profile) {
+        await supabaseClient.auth.signOut();
+        desktopSetLoginError('找不到此帳號的系統權限。');
+        return;
+    }
+    if(profile.approval !== 'approved') {
+        await supabaseClient.auth.signOut();
+        const msg = profile.approval === 'pending' ? '護理長帳號正在等待管理者審核。' : profile.approval === 'disabled' ? '此帳號已停用。' : '此帳號目前無法登入。';
+        desktopSetLoginError(msg);
+        return;
+    }
+    desktopProfile = profile;
+    if(profile.unit_id) {
+        const { data: unit } = await supabaseClient.from('units').select('*').eq('id', profile.unit_id).single();
+        desktopUnit = unit || null;
+    } else desktopUnit = null;
+
+    document.getElementById('desktop-login').classList.add('hidden');
+    document.getElementById('desktop-dashboard').classList.remove('hidden');
+    const scopeName = profile.role === 'admin' ? '全院' : (desktopUnit?.code || profile.username);
+    document.getElementById('desktop-title').innerText = `${scopeName} CPR 系統`;
+    const roleName = profile.role === 'admin' ? '管理者' : profile.role === 'head_nurse' ? '護理長' : '單位帳號';
+    document.getElementById('desktop-role-label').innerText = `${roleName}｜${profile.username}`;
+    document.getElementById('desktop-history-title').innerText = profile.role === 'unit' ? '近 3 天 CPR 紀錄' : '歷史 CPR 紀錄';
+    document.getElementById('nav-unit-settings').classList.toggle('hidden', profile.role !== 'head_nurse');
+    document.getElementById('nav-admin').classList.toggle('hidden', profile.role !== 'admin');
+    switchDesktopView('monitor');
+    await refreshDesktopDashboard(false);
+    subscribeDesktopRealtime();
+}
+
+function switchDesktopView(view) {
+    if(view === 'unit' && desktopProfile?.role !== 'head_nurse') return;
+    if(view === 'admin' && desktopProfile?.role !== 'admin') return;
+    v17CurrentDesktopView = view;
+    document.getElementById('desktop-monitor-panel').classList.toggle('hidden', view !== 'monitor');
+    document.getElementById('desktop-unit-settings-panel').classList.toggle('hidden', view !== 'unit');
+    document.getElementById('desktop-admin-panel').classList.toggle('hidden', view !== 'admin');
+    document.querySelectorAll('.desktop-main-nav').forEach(btn => {
+        const active = (btn.id === 'nav-monitor' && view==='monitor') || (btn.id==='nav-unit-settings' && view==='unit') || (btn.id==='nav-admin' && view==='admin');
+        btn.className = `desktop-main-nav px-4 py-2 rounded-lg text-sm font-bold whitespace-nowrap ${active ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-200'}`;
+    });
+    if(view === 'unit') loadHeadNurseSettings();
+    if(view === 'admin') switchAdminSection(v17AdminSection || 'units');
+}
+
+async function loadHeadNurseSettings() {
+    if(!desktopUnit) return;
+    document.getElementById('unit-settings-title').innerText = `${desktopUnit.code} 單位設定`;
+    const root = document.getElementById('unit-settings-content');
+    root.innerHTML = '<div class="text-center text-slate-400 py-10"><i class="fa-solid fa-spinner fa-spin mr-1"></i>讀取中...</div>';
+    try {
+        const [medsR, musR, tubesR, tusR, bloodR, busR, auditR] = await Promise.all([
+            supabaseClient.from('medications').select('*').eq('is_active', true).order('global_sort'),
+            supabaseClient.from('medication_unit_settings').select('*').eq('unit_id', desktopUnit.id),
+            supabaseClient.from('tube_types').select('*').eq('is_active', true).order('sort_order'),
+            supabaseClient.from('tube_unit_settings').select('*').eq('unit_id', desktopUnit.id),
+            supabaseClient.from('blood_products').select('*').eq('is_active', true).order('sort_order'),
+            supabaseClient.from('blood_unit_settings').select('*').eq('unit_id', desktopUnit.id),
+            supabaseClient.from('audit_logs').select('*').eq('unit_id', desktopUnit.id).order('created_at',{ascending:false}).limit(20)
+        ]);
+        [medsR,musR,tubesR,tusR,bloodR,busR].forEach(r=>{ if(r.error) throw r.error; });
+        const mus = Object.fromEntries((musR.data||[]).map(x=>[x.medication_id,x]));
+        const tus = Object.fromEntries((tusR.data||[]).map(x=>[x.tube_type_id,x]));
+        const bus = Object.fromEntries((busR.data||[]).map(x=>[x.blood_product_id,x]));
+        root.innerHTML = `
+          <section class="v17-card p-5">
+            <h3 class="font-extrabold text-slate-800 mb-1"><i class="fa-solid fa-key text-amber-500 mr-1"></i>單位登入密碼</h3>
+            <p class="text-sm text-slate-500 mb-4">帳號固定為 <b>${escapeHtml(desktopUnit.code)}</b>，護理長只能修改密碼。</p>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3 max-w-2xl">
+              <div><label class="v17-label">新密碼</label><div class="relative"><input id="unit-new-password" type="password" class="v17-input pr-12" placeholder="至少 8 碼"><button onclick="togglePasswordVisibility('unit-new-password','unit-new-password-eye')" class="absolute right-1 top-1 bottom-1 w-10 text-slate-500"><i id="unit-new-password-eye" class="fa-solid fa-eye-slash"></i></button></div></div>
+              <div><label class="v17-label">再次輸入</label><div class="relative"><input id="unit-new-password2" type="password" class="v17-input pr-12" placeholder="再次輸入"><button onclick="togglePasswordVisibility('unit-new-password2','unit-new-password2-eye')" class="absolute right-1 top-1 bottom-1 w-10 text-slate-500"><i id="unit-new-password2-eye" class="fa-solid fa-eye-slash"></i></button></div></div>
+            </div>
+            <button onclick="changeOwnUnitPassword()" class="mt-3 px-4 py-2.5 bg-blue-600 text-white rounded-lg font-bold">儲存新密碼</button>
+          </section>
+          <section class="v17-card p-5"><h3 class="font-extrabold text-slate-800 mb-3"><i class="fa-solid fa-pills text-purple-500 mr-1"></i>藥物設定</h3><div class="space-y-3">${(medsR.data||[]).map(m=>renderHNMedCard(m,mus[m.id])).join('')}</div></section>
+          <section class="v17-card p-5"><h3 class="font-extrabold text-slate-800 mb-3"><i class="fa-solid fa-syringe text-teal-500 mr-1"></i>管路預設</h3><div class="space-y-3">${(tubesR.data||[]).map(t=>renderHNTubeCard(t,tus[t.id])).join('')}</div></section>
+          <section class="v17-card p-5"><h3 class="font-extrabold text-slate-800 mb-3"><i class="fa-solid fa-droplet text-red-500 mr-1"></i>血品預設</h3><div class="space-y-3">${(bloodR.data||[]).map(b=>renderHNBloodCard(b,bus[b.id])).join('')}</div></section>
+          <section class="v17-card p-5"><h3 class="font-extrabold text-slate-800 mb-3"><i class="fa-solid fa-clock-rotate-left text-slate-500 mr-1"></i>最近設定紀錄</h3>${renderAuditList(auditR.data||[])}</section>`;
+    } catch(err) {
+        console.error(err); root.innerHTML = `<div class="bg-red-50 text-red-700 p-4 rounded-xl font-bold">讀取單位設定失敗：${escapeHtml(err.message||'')}</div>`;
+    }
+}
+
+function renderHNMedCard(m,s={}) {
+    const epi = m.system_key === 'epinephrine';
+    const quick = Array.isArray(s.quick_qty) ? s.quick_qty.join(',') : '1';
+    const pumpVal = s.pump_default_value_override ?? m.pump_default_value ?? '';
+    return `<div class="border border-slate-200 rounded-xl p-4" data-hn-med="${m.id}">
+      <div class="flex items-center justify-between gap-3"><div><div class="font-extrabold text-slate-800">${escapeHtml(m.name)} ${epi?'<span class="text-[10px] bg-red-100 text-red-700 px-2 py-0.5 rounded-full">固定第一</span>':''}</div><div class="text-xs text-slate-400">${escapeHtml(m.generic_name||'')} ${m.has_pump?`｜Pump ${m.pump_min_qty}支以上`:''}</div></div><label class="text-sm font-bold"><input id="hn-med-visible-${m.id}" type="checkbox" ${epi||s.is_visible!==false?'checked':''} ${epi?'disabled':''}> 顯示</label></div>
+      <div class="grid grid-cols-2 md:grid-cols-5 gap-2 mt-3">
+        <div><label class="v17-label">預設支數</label><input id="hn-med-qty-${m.id}" type="number" step="0.5" class="v17-input" value="${s.default_qty ?? m.default_qty ?? 1}"></div>
+        <div class="md:col-span-2"><label class="v17-label">快速選擇（逗號分隔）</label><input id="hn-med-quick-${m.id}" class="v17-input" value="${escapeHtml(quick)}" placeholder="1,2,6"></div>
+        <div><label class="v17-label">排序</label><input id="hn-med-sort-${m.id}" type="number" class="v17-input" value="${epi?1:(s.sort_order ?? m.global_sort ?? 100)}" ${epi?'disabled':''}></div>
+        <div><label class="v17-label">Pump預設${m.has_pump?'':'（此藥無Pump）'}</label><input id="hn-med-pump-${m.id}" type="number" step="0.1" class="v17-input" value="${pumpVal}" ${m.has_pump?'':'disabled'}></div>
+      </div><button onclick="saveHNMedication('${m.id}')" class="mt-3 px-3 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold">儲存</button></div>`;
+}
+
+async function saveHNMedication(id) {
+    const quick = document.getElementById(`hn-med-quick-${id}`).value.split(',').map(x=>Number(x.trim())).filter(x=>Number.isFinite(x)&&x>0);
+    const payload = { unit_id:desktopUnit.id, medication_id:id,
+      is_visible:document.getElementById(`hn-med-visible-${id}`).checked,
+      default_qty:Number(document.getElementById(`hn-med-qty-${id}`).value)||1,
+      quick_qty:quick.length?quick:[1],
+      sort_order:Number(document.getElementById(`hn-med-sort-${id}`).value)||100,
+      pump_default_value_override:document.getElementById(`hn-med-pump-${id}`).disabled?null:(Number(document.getElementById(`hn-med-pump-${id}`).value)||null)
+    };
+    const { error } = await supabaseClient.from('medication_unit_settings').upsert(payload,{onConflict:'unit_id,medication_id'});
+    if(error) return alertV17(`儲存失敗：${error.message}`,true); alertV17('藥物設定已儲存');
+}
+
+function renderHNTubeCard(t,s={}) {
+    const defs=s.default_values||{}; const fields=Array.isArray(t.field_schema)?t.field_schema:[];
+    return `<div class="border border-slate-200 rounded-xl p-4"><div class="flex justify-between gap-3"><div class="font-extrabold">${escapeHtml(t.name)}</div><label class="text-sm font-bold"><input id="hn-tube-visible-${t.id}" type="checkbox" ${s.is_visible!==false?'checked':''}> 顯示</label></div><div class="grid grid-cols-2 md:grid-cols-4 gap-2 mt-3"><div><label class="v17-label">排序</label><input id="hn-tube-sort-${t.id}" type="number" class="v17-input" value="${s.sort_order ?? t.sort_order ?? 100}"></div>${fields.map(f=>`<div><label class="v17-label">${escapeHtml(f.label||f.key)} 預設</label><input id="hn-tube-def-${t.id}-${escapeHtml(f.key)}" class="v17-input" value="${escapeHtml(defs[f.key] ?? f.default ?? '')}"></div>`).join('')}</div><button onclick="saveHNTube('${t.id}')" class="mt-3 px-3 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold">儲存</button></div>`;
+}
+async function saveHNTube(id) {
+    const { data:t } = await supabaseClient.from('tube_types').select('*').eq('id',id).single();
+    const defs={}; (t?.field_schema||[]).forEach(f=>{ const el=document.getElementById(`hn-tube-def-${id}-${f.key}`); if(el&&el.value!=='') defs[f.key]=el.value; });
+    const payload={unit_id:desktopUnit.id,tube_type_id:id,is_visible:document.getElementById(`hn-tube-visible-${id}`).checked,sort_order:Number(document.getElementById(`hn-tube-sort-${id}`).value)||100,default_values:defs};
+    const {error}=await supabaseClient.from('tube_unit_settings').upsert(payload,{onConflict:'unit_id,tube_type_id'}); if(error)return alertV17(`儲存失敗：${error.message}`,true); alertV17('管路設定已儲存');
+}
+function renderHNBloodCard(b,s={}) { return `<div class="border border-slate-200 rounded-xl p-4 grid grid-cols-1 md:grid-cols-4 gap-2 items-end"><div class="font-extrabold">${escapeHtml(b.name)}</div><label class="text-sm font-bold"><input id="hn-blood-visible-${b.id}" type="checkbox" ${s.is_visible!==false?'checked':''}> 顯示</label><div><label class="v17-label">預設 U</label><input id="hn-blood-u-${b.id}" type="number" step="0.5" class="v17-input" value="${s.default_units ?? 2}"></div><div><label class="v17-label">排序</label><div class="flex gap-2"><input id="hn-blood-sort-${b.id}" type="number" class="v17-input" value="${s.sort_order ?? b.sort_order ?? 100}"><button onclick="saveHNBlood('${b.id}')" class="px-3 bg-blue-600 text-white rounded-lg font-bold">儲存</button></div></div></div>`; }
+async function saveHNBlood(id){ const payload={unit_id:desktopUnit.id,blood_product_id:id,is_visible:document.getElementById(`hn-blood-visible-${id}`).checked,default_units:Number(document.getElementById(`hn-blood-u-${id}`).value)||1,sort_order:Number(document.getElementById(`hn-blood-sort-${id}`).value)||100}; const {error}=await supabaseClient.from('blood_unit_settings').upsert(payload,{onConflict:'unit_id,blood_product_id'}); if(error)return alertV17(`儲存失敗：${error.message}`,true); alertV17('血品設定已儲存'); }
+
+async function changeOwnUnitPassword(){ const p=document.getElementById('unit-new-password').value,p2=document.getElementById('unit-new-password2').value; if(p.length<8)return alertV17('密碼至少 8 碼',true); if(p!==p2)return alertV17('兩次密碼不一致',true); try{await invokeV17UserAdmin({action:'reset_unit_password',unitId:desktopUnit.id,password:p}); document.getElementById('unit-new-password').value='';document.getElementById('unit-new-password2').value='';alertV17('單位密碼已更新');}catch(e){alertV17(e.message,true);} }
+
+function alertV17(msg,error=false){ desktopFlashLiveBadge(error?'操作失敗':'已儲存',error); const el=document.getElementById('desktop-last-sync'); if(el)el.innerText=msg; }
+function renderAuditList(list){ if(!list.length)return '<div class="text-sm text-slate-400 py-4">尚無設定紀錄</div>'; return `<div class="space-y-2">${list.map(x=>`<div class="text-sm border-b border-slate-100 pb-2"><b>${escapeHtml(x.actor_username||'系統')}</b>｜${escapeHtml(x.action)}<div class="text-xs text-slate-400">${formatDesktopDate(x.created_at)}</div></div>`).join('')}</div>`; }
+
+function switchAdminSection(section){ if(desktopProfile?.role!=='admin')return; v17AdminSection=section; document.querySelectorAll('.admin-section-btn').forEach(b=>{const active=b.dataset.adminSection===section;b.className=`admin-section-btn px-4 py-2 rounded-lg font-bold text-sm ${active?'bg-blue-600 text-white':'bg-slate-100 text-slate-700'}`;}); if(section==='units')loadAdminUnits(); if(section==='headnurses')loadAdminHeadNurses(); if(section==='medications')loadAdminMedications(); if(section==='rhythms')loadAdminRhythms(); if(section==='tubes')loadAdminTubesBlood(); if(section==='audit')loadAdminAudit(); }
+function adminRoot(){return document.getElementById('admin-section-content');}
+
+async function loadAdminUnits(){ const root=adminRoot(); root.innerHTML='<div class="text-center text-slate-400 py-10">讀取中...</div>'; const {data,error}=await supabaseClient.from('units').select('*').order('sort_order').order('code'); if(error)return root.innerHTML=`<div class="text-red-600">${escapeHtml(error.message)}</div>`; v17UnitsCache=data||[]; root.innerHTML=`<section class="v17-card p-5"><h2 class="font-extrabold text-lg mb-3">新增使用單位</h2><div class="grid grid-cols-1 md:grid-cols-4 gap-3"><div><label class="v17-label">單位代碼 / 帳號</label><input id="admin-unit-code" class="v17-input uppercase" placeholder="例如：8A"></div><div><label class="v17-label">單位名稱</label><input id="admin-unit-name" class="v17-input" placeholder="例如：8A病房"></div><div><label class="v17-label">初始密碼</label><div class="relative"><input id="admin-unit-password" type="password" class="v17-input pr-12" placeholder="至少8碼"><button onclick="togglePasswordVisibility('admin-unit-password','admin-unit-password-eye')" class="absolute right-1 top-1 bottom-1 w-10 text-slate-500"><i id="admin-unit-password-eye" class="fa-solid fa-eye-slash"></i></button></div></div><div class="flex items-end"><button onclick="adminCreateUnit()" class="w-full py-2.5 bg-blue-600 text-white rounded-lg font-bold">新增單位</button></div></div><p class="text-xs text-slate-400 mt-2">帳號建立後固定為單位代碼；護理長只能改密碼。基於 Supabase 安全限制，密碼至少 8 碼。</p></section><section class="v17-card p-5"><h2 class="font-extrabold text-lg mb-3">目前單位</h2><div class="space-y-2">${(data||[]).map(u=>`<div class="flex items-center justify-between border border-slate-200 rounded-xl p-3"><div><b>${escapeHtml(u.code)}</b><span class="text-slate-500 ml-2">${escapeHtml(u.name)}</span></div><button onclick="adminToggleUnit('${u.id}',${!u.is_active})" class="px-3 py-1.5 rounded-lg text-sm font-bold ${u.is_active?'bg-emerald-100 text-emerald-700':'bg-slate-200 text-slate-600'}">${u.is_active?'啟用中':'已停用'}</button></div>`).join('')}</div></section>`; }
+async function adminCreateUnit(){const code=document.getElementById('admin-unit-code').value.trim().toUpperCase(),name=document.getElementById('admin-unit-name').value.trim()||code,p=document.getElementById('admin-unit-password').value;if(!code)return alertV17('請輸入單位代碼',true);if(p.length<8)return alertV17('初始密碼至少8碼',true);try{await invokeV17UserAdmin({action:'create_unit',unitCode:code,unitName:name,password:p});alertV17(`${code} 已建立`);loadAdminUnits();}catch(e){alertV17(e.message,true);}}
+async function adminToggleUnit(id,isActive){const{error}=await supabaseClient.from('units').update({is_active:isActive,updated_at:new Date().toISOString()}).eq('id',id);if(error)return alertV17(error.message,true);loadAdminUnits();}
+
+async function loadAdminHeadNurses(){const root=adminRoot();root.innerHTML='<div class="text-center text-slate-400 py-10">讀取中...</div>';const [pr,ur]=await Promise.all([supabaseClient.from('profiles').select('*').eq('role','head_nurse').order('created_at',{ascending:false}),supabaseClient.from('units').select('id,code,name')]);if(pr.error)return root.innerHTML=`<div class="text-red-600">${escapeHtml(pr.error.message)}</div>`;const um=Object.fromEntries((ur.data||[]).map(u=>[u.id,u]));root.innerHTML=`<section class="v17-card p-5"><h2 class="font-extrabold text-lg mb-3">護理長帳號申請與權限</h2><div class="space-y-3">${(pr.data||[]).length?(pr.data||[]).map(p=>`<div class="border border-slate-200 rounded-xl p-4 flex items-center justify-between gap-4"><div><div class="font-extrabold">${escapeHtml(p.display_name||p.username)} <span class="text-xs text-slate-400">${escapeHtml(p.username)}</span></div><div class="text-sm text-slate-500">${escapeHtml(um[p.unit_id]?.code||'--')}｜員編 ${escapeHtml(p.employee_no||'--')}｜狀態 ${escapeHtml(p.approval)}</div></div><div class="flex gap-2 flex-wrap justify-end">${p.approval!=='approved'?`<button onclick="adminSetHNApproval('${p.user_id}','approved')" class="px-3 py-2 bg-emerald-600 text-white rounded-lg text-sm font-bold">核准</button>`:''}${p.approval==='approved'?`<button onclick="adminSetHNApproval('${p.user_id}','disabled')" class="px-3 py-2 bg-amber-500 text-white rounded-lg text-sm font-bold">取消護理長權限</button>`:`<button onclick="adminSetHNApproval('${p.user_id}','disabled')" class="px-3 py-2 bg-slate-500 text-white rounded-lg text-sm font-bold">停用</button>`}<button onclick="adminDeleteHeadNurse('${p.user_id}')" class="px-3 py-2 bg-red-600 text-white rounded-lg text-sm font-bold">刪除帳號</button></div></div>`).join(''):'<div class="text-slate-400 py-6 text-center">目前沒有護理長申請</div>'}</div></section>`;}
+async function adminSetHNApproval(userId,status){const{error}=await supabaseClient.from('profiles').update({approval:status,updated_at:new Date().toISOString()}).eq('user_id',userId).eq('role','head_nurse');if(error)return alertV17(error.message,true);alertV17('權限已更新');loadAdminHeadNurses();}
+function adminDeleteHeadNurse(userId){showActionToast({title:'刪除護理長帳號',message:'確定要刪除這個護理長帳號嗎？刪除後需重新申請才能使用。',leftText:'取消',rightText:'確認刪除',danger:true,rightAction:async()=>{try{await invokeV17UserAdmin({action:'delete_head_nurse',userId});alertV17('帳號已刪除');loadAdminHeadNurses();}catch(e){alertV17(e.message,true);}}});}
+
+async function loadAdminMedications(){const root=adminRoot();root.innerHTML='<div class="text-center text-slate-400 py-10">讀取中...</div>';const [mr,sr,vr,msr,mvr]=await Promise.all([supabaseClient.from('medications').select('*').order('global_sort'),supabaseClient.from('mix_solutions').select('*').order('sort_order'),supabaseClient.from('mix_volumes').select('*').order('sort_order'),supabaseClient.from('medication_mix_solutions').select('*'),supabaseClient.from('medication_mix_volumes').select('*')]);if(mr.error)return root.innerHTML=`<div class="text-red-600">${escapeHtml(mr.error.message)}</div>`;v17MixSolutions=sr.data||[];v17MixVolumes=vr.data||[];v17AdminMedAssociations.solutions={};(msr.data||[]).forEach(x=>(v17AdminMedAssociations.solutions[x.medication_id]??=[]).push(x.solution_id));v17AdminMedAssociations.volumes={};(mvr.data||[]).forEach(x=>(v17AdminMedAssociations.volumes[x.medication_id]??=[]).push(x.volume_id));root.innerHTML=`<section class="v17-card p-5"><h2 class="font-extrabold text-lg mb-3">泡製選項</h2><div class="grid grid-cols-1 md:grid-cols-2 gap-5"><div><div class="font-bold mb-2">泡製溶液</div><div class="flex gap-2"><input id="admin-new-solution" class="v17-input" placeholder="例如：N/S"><button onclick="adminAddSolution()" class="px-3 bg-blue-600 text-white rounded-lg font-bold">新增</button></div><div class="text-sm text-slate-500 mt-2">${v17MixSolutions.map(x=>escapeHtml(x.name)).join('、')||'尚無'}</div></div><div><div class="font-bold mb-2">容量 (mL)</div><div class="flex gap-2"><input id="admin-new-volume" type="number" class="v17-input" placeholder="例如：250"><button onclick="adminAddVolume()" class="px-3 bg-blue-600 text-white rounded-lg font-bold">新增</button></div><div class="text-sm text-slate-500 mt-2">${v17MixVolumes.map(x=>escapeHtml(x.volume_ml)).join('、')||'尚無'}</div></div></div></section><section class="v17-card p-5"><h2 class="font-extrabold text-lg mb-3">新增藥物</h2>${adminMedicationEditor(null)}</section><section class="v17-card p-5"><h2 class="font-extrabold text-lg mb-3">藥物主檔</h2><div class="space-y-3">${(mr.data||[]).map(m=>`<details class="border border-slate-200 rounded-xl"><summary class="cursor-pointer p-4 font-extrabold">${escapeHtml(m.name)} ${m.system_key==='epinephrine'?'<span class="text-xs text-red-600">（Adrenalin固定第一）</span>':''}</summary><div class="p-4 pt-0">${adminMedicationEditor(m)}</div></details>`).join('')}</div></section>`;}
+function adminMedicationEditor(m){const id=m?.id||'new',assocS=v17AdminMedAssociations.solutions[m?.id]||[],assocV=v17AdminMedAssociations.volumes[m?.id]||[];return `<div id="admin-med-${id}" class="grid grid-cols-2 md:grid-cols-4 gap-3"><div><label class="v17-label">藥物名稱</label><input data-f="name" class="v17-input" value="${escapeHtml(m?.name||'')}" ${m?.system_key==='epinephrine'?'disabled':''}></div><div><label class="v17-label">學名</label><input data-f="generic_name" class="v17-input" value="${escapeHtml(m?.generic_name||'')}"></div><div><label class="v17-label">每支含量</label><input data-f="amount_value" type="number" step="0.1" class="v17-input" value="${m?.amount_value??''}"></div><div><label class="v17-label">含量單位</label><input data-f="amount_unit" class="v17-input" value="${escapeHtml(m?.amount_unit||'mg')}"></div><div><label class="v17-label">每支容量 mL</label><input data-f="volume_ml" type="number" step="0.1" class="v17-input" value="${m?.volume_ml??''}"></div><div><label class="v17-label">全院預設支數</label><input data-f="default_qty" type="number" step="0.5" class="v17-input" value="${m?.default_qty??1}"></div><div><label class="v17-label">排序</label><input data-f="global_sort" type="number" class="v17-input" value="${m?.global_sort??100}" ${m?.system_key==='epinephrine'?'disabled':''}></div><div class="flex items-end"><label class="font-bold text-sm"><input data-f="is_active" type="checkbox" ${m?.is_active!==false?'checked':''} ${m?.system_key==='epinephrine'?'disabled':''}> 啟用</label></div><div class="flex items-end"><label class="font-bold text-sm"><input data-f="has_pump" type="checkbox" ${m?.has_pump?'checked':''}> 有 Pump</label></div><div><label class="v17-label">幾支以上出現 Pump</label><input data-f="pump_min_qty" type="number" step="0.5" class="v17-input" value="${m?.pump_min_qty??1}"></div><div><label class="v17-label">Pump 全院預設</label><input data-f="pump_default_value" type="number" step="0.1" class="v17-input" value="${m?.pump_default_value??''}"></div><div><label class="v17-label">Pump 單位</label><input data-f="pump_unit" class="v17-input" value="${escapeHtml(m?.pump_unit||'滴/分')}"></div><div class="col-span-2"><label class="v17-label">允許泡製溶液</label><div class="flex flex-wrap gap-2">${v17MixSolutions.map(s=>`<label class="text-sm"><input data-sol="${s.id}" type="checkbox" ${assocS.includes(s.id)?'checked':''}> ${escapeHtml(s.name)}</label>`).join('')}</div></div><div class="col-span-2"><label class="v17-label">允許容量</label><div class="flex flex-wrap gap-2">${v17MixVolumes.map(v=>`<label class="text-sm"><input data-vol="${v.id}" type="checkbox" ${assocV.includes(v.id)?'checked':''}> ${escapeHtml(v.volume_ml)}mL</label>`).join('')}</div></div><div class="col-span-2 md:col-span-4"><button onclick="saveAdminMedication('${id}')" class="px-4 py-2.5 bg-blue-600 text-white rounded-lg font-bold">${m?'儲存藥物':'新增藥物'}</button></div></div>`;}
+async function saveAdminMedication(id){const root=document.getElementById(`admin-med-${id}`),get=f=>root.querySelector(`[data-f="${f}"]`);const payload={name:get('name').value.trim(),generic_name:get('generic_name').value.trim()||null,amount_value:Number(get('amount_value').value)||null,amount_unit:get('amount_unit').value.trim()||'mg',volume_ml:Number(get('volume_ml').value)||null,default_qty:Number(get('default_qty').value)||1,has_pump:get('has_pump').checked,pump_min_qty:Number(get('pump_min_qty').value)||1,pump_default_value:Number(get('pump_default_value').value)||null,pump_unit:get('pump_unit').value.trim()||'滴/分',is_active:get('is_active').checked,global_sort:Number(get('global_sort').value)||100,updated_at:new Date().toISOString()};if(!payload.name)return alertV17('藥物名稱必填',true);let medId=id;if(id==='new'){const{data,error}=await supabaseClient.from('medications').insert(payload).select().single();if(error)return alertV17(error.message,true);medId=data.id;}else{const{error}=await supabaseClient.from('medications').update(payload).eq('id',id);if(error)return alertV17(error.message,true);}const sols=[...root.querySelectorAll('[data-sol]:checked')].map(x=>x.dataset.sol),vols=[...root.querySelectorAll('[data-vol]:checked')].map(x=>x.dataset.vol);await supabaseClient.from('medication_mix_solutions').delete().eq('medication_id',medId);await supabaseClient.from('medication_mix_volumes').delete().eq('medication_id',medId);if(sols.length)await supabaseClient.from('medication_mix_solutions').insert(sols.map(solution_id=>({medication_id:medId,solution_id})));if(vols.length)await supabaseClient.from('medication_mix_volumes').insert(vols.map(volume_id=>({medication_id:medId,volume_id})));alertV17('藥物已儲存');loadAdminMedications();}
+async function adminAddSolution(){const name=document.getElementById('admin-new-solution').value.trim();if(!name)return;const{error}=await supabaseClient.from('mix_solutions').insert({name,sort_order:v17MixSolutions.length+1});if(error)return alertV17(error.message,true);loadAdminMedications();}
+async function adminAddVolume(){const v=Number(document.getElementById('admin-new-volume').value);if(!v)return;const{error}=await supabaseClient.from('mix_volumes').insert({volume_ml:v,sort_order:v17MixVolumes.length+1});if(error)return alertV17(error.message,true);loadAdminMedications();}
+
+async function loadAdminRhythms(){const root=adminRoot();const[rr,sr]=await Promise.all([supabaseClient.from('rhythms').select('*').order('sort_order'),supabaseClient.from('shock_energies').select('*').order('sort_order')]);root.innerHTML=`<section class="v17-card p-5"><h2 class="font-extrabold text-lg mb-3">新增心律</h2><div class="flex gap-2 flex-wrap"><input id="admin-rhythm-name" class="v17-input max-w-xs" placeholder="心律名稱"><input id="admin-rhythm-sort" type="number" class="v17-input w-28" placeholder="排序"><label class="flex items-center gap-1 font-bold text-sm"><input id="admin-rhythm-shock" type="checkbox"> 啟動電擊</label><button onclick="adminAddRhythm()" class="px-4 bg-blue-600 text-white rounded-lg font-bold">新增</button></div></section><section class="v17-card p-5"><h2 class="font-extrabold text-lg mb-3">心律</h2><div class="space-y-2">${(rr.data||[]).map(r=>`<div class="grid grid-cols-1 md:grid-cols-5 gap-2 items-center border rounded-xl p-3"><input id="rh-name-${r.id}" class="v17-input" value="${escapeHtml(r.name)}"><input id="rh-sort-${r.id}" type="number" class="v17-input" value="${r.sort_order}"><label class="font-bold text-sm"><input id="rh-shock-${r.id}" type="checkbox" ${r.is_shockable?'checked':''}> 電擊</label><label class="font-bold text-sm"><input id="rh-active-${r.id}" type="checkbox" ${r.is_active?'checked':''}> 啟用</label><button onclick="adminSaveRhythm('${r.id}')" class="px-3 py-2 bg-blue-600 text-white rounded-lg font-bold">儲存</button></div>`).join('')}</div></section><section class="v17-card p-5"><h2 class="font-extrabold text-lg mb-3">電擊焦耳</h2><div class="flex gap-2 mb-3"><input id="admin-shock-j" type="number" class="v17-input max-w-xs" placeholder="例如：200"><button onclick="adminAddShock()" class="px-4 bg-red-600 text-white rounded-lg font-bold">新增</button></div><div class="flex flex-wrap gap-2">${(sr.data||[]).map(s=>`<span class="px-3 py-2 rounded-lg bg-red-50 text-red-700 font-bold">${s.joules}J</span>`).join('')}</div></section>`;}
+async function adminAddRhythm(){const name=document.getElementById('admin-rhythm-name').value.trim();if(!name)return;const{error}=await supabaseClient.from('rhythms').insert({name,is_shockable:document.getElementById('admin-rhythm-shock').checked,sort_order:Number(document.getElementById('admin-rhythm-sort').value)||100});if(error)return alertV17(error.message,true);loadAdminRhythms();}
+async function adminSaveRhythm(id){const{error}=await supabaseClient.from('rhythms').update({name:document.getElementById(`rh-name-${id}`).value.trim(),sort_order:Number(document.getElementById(`rh-sort-${id}`).value)||100,is_shockable:document.getElementById(`rh-shock-${id}`).checked,is_active:document.getElementById(`rh-active-${id}`).checked}).eq('id',id);if(error)return alertV17(error.message,true);alertV17('心律已儲存');}
+async function adminAddShock(){const j=Number(document.getElementById('admin-shock-j').value);if(!j)return;const{error}=await supabaseClient.from('shock_energies').insert({joules:j,sort_order:j});if(error)return alertV17(error.message,true);loadAdminRhythms();}
+
+async function loadAdminTubesBlood(){const root=adminRoot();const[tr,br]=await Promise.all([supabaseClient.from('tube_types').select('*').order('sort_order'),supabaseClient.from('blood_products').select('*').order('sort_order')]);root.innerHTML=`<section class="v17-card p-5"><h2 class="font-extrabold text-lg mb-3">新增管路類別</h2><div class="grid grid-cols-1 md:grid-cols-4 gap-2"><input id="admin-tube-code" class="v17-input" placeholder="代碼，例如 aline"><input id="admin-tube-name" class="v17-input" placeholder="顯示名稱，例如 A-line"><input id="admin-tube-sort" type="number" class="v17-input" placeholder="排序"><button onclick="adminAddTube()" class="bg-blue-600 text-white rounded-lg font-bold">新增</button></div><p class="text-xs text-slate-400 mt-2">新類別若沒有額外欄位，也可直接紀錄；既有欄位結構可在下方進階欄位 JSON 編輯。</p></section><section class="v17-card p-5"><h2 class="font-extrabold text-lg mb-3">管路主檔</h2><div class="space-y-3">${(tr.data||[]).map(t=>`<details class="border rounded-xl"><summary class="p-3 cursor-pointer font-extrabold">${escapeHtml(t.name)}</summary><div class="p-3 pt-0 grid grid-cols-1 md:grid-cols-4 gap-2"><input id="tube-name-${t.id}" class="v17-input" value="${escapeHtml(t.name)}"><input id="tube-sort-${t.id}" type="number" class="v17-input" value="${t.sort_order}"><label class="font-bold text-sm"><input id="tube-active-${t.id}" type="checkbox" ${t.is_active?'checked':''}> 啟用</label><button onclick="adminSaveTube('${t.id}')" class="bg-blue-600 text-white rounded-lg font-bold">儲存</button><div class="md:col-span-4"><label class="v17-label">進階欄位 JSON</label><textarea id="tube-schema-${t.id}" class="v17-input font-mono text-xs h-28">${escapeHtml(JSON.stringify(t.field_schema||[],null,2))}</textarea></div></div></details>`).join('')}</div></section><section class="v17-card p-5"><h2 class="font-extrabold text-lg mb-3">新增血品</h2><div class="grid grid-cols-1 md:grid-cols-4 gap-2"><input id="admin-blood-code" class="v17-input" placeholder="代碼"><input id="admin-blood-name" class="v17-input" placeholder="名稱"><input id="admin-blood-sort" type="number" class="v17-input" placeholder="排序"><button onclick="adminAddBlood()" class="bg-red-600 text-white rounded-lg font-bold">新增</button></div><div class="mt-4 space-y-2">${(br.data||[]).map(b=>`<div class="grid grid-cols-1 md:grid-cols-4 gap-2"><input id="blood-name-${b.id}" class="v17-input" value="${escapeHtml(b.name)}"><input id="blood-sort-${b.id}" type="number" class="v17-input" value="${b.sort_order}"><label class="font-bold text-sm"><input id="blood-active-${b.id}" type="checkbox" ${b.is_active?'checked':''}> 啟用</label><button onclick="adminSaveBlood('${b.id}')" class="bg-blue-600 text-white rounded-lg font-bold">儲存</button></div>`).join('')}</div></section>`;}
+async function adminAddTube(){const code=document.getElementById('admin-tube-code').value.trim().toLowerCase(),name=document.getElementById('admin-tube-name').value.trim();if(!code||!name)return alertV17('代碼與名稱必填',true);const{error}=await supabaseClient.from('tube_types').insert({code,name,sort_order:Number(document.getElementById('admin-tube-sort').value)||100,field_schema:[]});if(error)return alertV17(error.message,true);loadAdminTubesBlood();}
+async function adminSaveTube(id){let schema;try{schema=JSON.parse(document.getElementById(`tube-schema-${id}`).value||'[]');}catch(e){return alertV17('欄位 JSON 格式錯誤',true);}const{error}=await supabaseClient.from('tube_types').update({name:document.getElementById(`tube-name-${id}`).value.trim(),sort_order:Number(document.getElementById(`tube-sort-${id}`).value)||100,is_active:document.getElementById(`tube-active-${id}`).checked,field_schema:schema}).eq('id',id);if(error)return alertV17(error.message,true);alertV17('管路已儲存');}
+async function adminAddBlood(){const code=document.getElementById('admin-blood-code').value.trim().toUpperCase(),name=document.getElementById('admin-blood-name').value.trim();if(!code||!name)return;const{error}=await supabaseClient.from('blood_products').insert({code,name,sort_order:Number(document.getElementById('admin-blood-sort').value)||100});if(error)return alertV17(error.message,true);loadAdminTubesBlood();}
+async function adminSaveBlood(id){const{error}=await supabaseClient.from('blood_products').update({name:document.getElementById(`blood-name-${id}`).value.trim(),sort_order:Number(document.getElementById(`blood-sort-${id}`).value)||100,is_active:document.getElementById(`blood-active-${id}`).checked}).eq('id',id);if(error)return alertV17(error.message,true);alertV17('血品已儲存');}
+async function loadAdminAudit(){const root=adminRoot();const{data,error}=await supabaseClient.from('audit_logs').select('*').order('created_at',{ascending:false}).limit(100);if(error)return root.innerHTML=`<div class="text-red-600">${escapeHtml(error.message)}</div>`;root.innerHTML=`<section class="v17-card p-5"><h2 class="font-extrabold text-lg mb-3">最近 100 筆設定操作</h2>${renderAuditList(data||[])}</section>`;}
+
+// ---------- 手機：從 Supabase 載入單位臨床設定 ----------
+async function loadV17ClinicalConfig(unitCode=deviceUnit) {
+    try {
+        const {data,error}=await supabaseClient.rpc('get_unit_clinical_config',{p_unit_code:unitCode});
+        if(error) throw error;
+        v17ClinicalConfig=data;
+        applyV17ClinicalConfig();
+    } catch(err) { console.warn('V17 臨床設定讀取失敗，沿用內建設定',err); }
+}
+function applyV17ClinicalConfig(){if(!v17ClinicalConfig)return;const meds=v17ClinicalConfig.medications||[];Object.keys(medDict).forEach(k=>{if(!k.startsWith('大量點滴'))delete medDict[k];});meds.forEach(m=>{medDict[m.name]={generic:m.generic_name||'',val:Number(m.amount_value)||0,unit:m.amount_unit||'mg',ml:Number(m.volume_ml)||0,quick:Array.isArray(m.quick_qty)?m.quick_qty:[],defaultQty:Number(m.default_qty)||1,hasPump:!!m.has_pump,pumpMinQty:Number(m.pump_min_qty)||1,pumpDefault:m.pump_default_value==null?'':Number(m.pump_default_value),pumpUnit:m.pump_unit||'滴/分',mixSolutions:m.mix_solutions||[],mixVolumes:m.mix_volumes||[],systemKey:m.system_key||null};});renderV17MedicationButtons(meds);renderV17Rhythms(v17ClinicalConfig.rhythms||[]);renderV17ShockEnergies(v17ClinicalConfig.shock_energies||[]);renderV17Tubes(v17ClinicalConfig.tubes||[]);renderV17Blood(v17ClinicalConfig.blood_products||[]);}
+function renderV17MedicationButtons(meds){const epi=meds.find(m=>m.system_key==='epinephrine')||meds.find(m=>m.name==='Adrenalin');const epiBtn=document.querySelector('button[onclick="openMedModal(\'Adrenalin\')"]');if(epiBtn&&epi){epiBtn.setAttribute('onclick',`openMedModal(${JSON.stringify(epi.name)})`);const span=epiBtn.querySelector('div > span:first-child');if(span)span.innerText=epi.name;}const grid=document.getElementById('med-button-grid');if(!grid)return;const others=meds.filter(m=>m!==epi);grid.innerHTML=others.map((m,i)=>`<button onclick='openMedModal(${JSON.stringify(m.name)})' class="${i===others.length-1&&others.length%2===1?'col-span-2 ':''}bg-white text-slate-800 border border-slate-300 py-4 rounded-lg font-bold text-[15px] md:text-lg btn-active px-1 text-center shadow-sm">${escapeHtml(m.name)}</button>`).join('');}
+function chunkArray(a,sizes){const out=[];let i=0,si=0;while(i<a.length){const n=sizes[Math.min(si,sizes.length-1)];out.push(a.slice(i,i+n));i+=n;si++;}return out;}
+function rhythmBtnClass(r){if(r.is_shockable)return 'bg-red-50 text-red-700 border-red-200';if(['Asystole','PEA'].includes(r.name))return 'bg-slate-100 text-slate-700 border-slate-300';return 'bg-blue-50 text-blue-700 border-blue-200';}
+function renderV17Rhythms(list){const box=document.getElementById('rhythm-buttons');if(box)box.innerHTML=chunkArray(list,[2,3,3]).map(row=>`<div class="flex gap-2">${row.map(r=>`<button onclick='logRhythm(${JSON.stringify(r.name)})' class="flex-1 border py-4 rounded-lg font-bold text-[15px] md:text-lg btn-active ${rhythmBtnClass(r)}">${escapeHtml(r.name)}</button>`).join('')}</div>`).join('');const cbox=document.getElementById('cycle-rhythm-buttons');if(cbox)cbox.innerHTML=chunkArray(list,[2,3,3]).map(row=>`<div class="flex gap-2">${row.map(r=>`<button onclick='selectCycleRhythm(${JSON.stringify(r.name)})' data-cycle-rhythm="${escapeHtml(r.name)}" class="cycle-r-btn flex-1 bg-slate-50 text-slate-500 border border-slate-200 py-2 rounded-lg font-bold text-sm btn-active">${escapeHtml(r.name)}</button>`).join('')}</div>`).join('');}
+function renderV17ShockEnergies(list){const box=document.getElementById('shock-energy-buttons');if(box)box.innerHTML=list.map(s=>`<button onclick="logEvent('電擊','${Number(s.joules)} J'); resetShock();" class="bg-red-500 text-white py-3 rounded-lg font-bold text-base md:text-lg btn-active shadow-sm">${Number(s.joules)} J</button>`).join('');}
+function logRhythm(rhythm){logEvent('心律',rhythm);const item=(v17ClinicalConfig?.rhythms||[]).find(x=>x.name===rhythm);if(item?.is_shockable){document.getElementById('shock-panel').classList.remove('hidden');document.getElementById('shock-panel').classList.add('fade-in');}else resetShock();}
+function selectCycleRhythm(rhythm){selectedCycleRhythm=rhythm;document.querySelectorAll('.cycle-r-btn').forEach(btn=>{btn.className='cycle-r-btn flex-1 bg-slate-50 text-slate-500 border border-slate-200 py-2 rounded-lg font-bold text-sm btn-active';});const btn=[...document.querySelectorAll('.cycle-r-btn')].find(x=>x.dataset.cycleRhythm===rhythm);const noPulse=['VF','VT','PULSE VT','Asystole','PEA'].includes(rhythm);if(btn)btn.className=`cycle-r-btn flex-1 ${noPulse?'bg-red-100 text-red-700 border-red-400':'bg-blue-100 text-blue-700 border-blue-400'} border-2 py-2 rounded-lg font-bold text-sm btn-active`;setPulse(noPulse?'無脈搏':'摸到脈搏');}
+function renderV17Tubes(list){const tabs=document.getElementById('tube-tabs-container'),panels=document.getElementById('tube-panels-container');if(!tabs||!panels)return;tabs.innerHTML=list.map((t,i)=>`<button onclick="switchTubeTab('${escapeHtml(t.code)}')" id="tab-${escapeHtml(t.code)}" class="tube-tab px-3 py-1.5 rounded-full ${i===0?'bg-teal-100 text-teal-800':'bg-slate-100 text-slate-600'} font-bold text-xs flex-shrink-0">${escapeHtml(t.name)}</button>`).join('');panels.innerHTML=list.map((t,i)=>`<div id="panel-${escapeHtml(t.code)}" class="tube-panel ${i?'hidden ':''}flex flex-col gap-2"><div class="grid grid-cols-2 gap-2">${(t.fields||[]).map(f=>renderDynamicTubeField(t,f)).join('')}</div><button onclick="submitDynamicTube('${escapeHtml(t.code)}')" class="bg-teal-500 text-white h-[40px] px-4 rounded font-bold text-sm btn-active">紀錄 ${escapeHtml(t.name)}</button></div>`).join('');}
+function renderDynamicTubeField(t,f){const v=(t.default_values||{})[f.key]??f.default??'';if(f.type==='select')return `<div><label class="block text-[10px] text-slate-500 mb-1">${escapeHtml(f.label||f.key)}</label><select id="dyn-tube-${escapeHtml(t.code)}-${escapeHtml(f.key)}" class="w-full p-2 border border-slate-300 rounded text-sm bg-slate-50">${(f.options||[]).map(o=>`<option ${String(o)===String(v)?'selected':''}>${escapeHtml(o)}</option>`).join('')}</select></div>`;return `<div><label class="block text-[10px] text-slate-500 mb-1">${escapeHtml(f.label||f.key)}</label><input id="dyn-tube-${escapeHtml(t.code)}-${escapeHtml(f.key)}" type="${f.type==='number'?'number':'text'}" inputmode="${f.type==='number'?'decimal':'text'}" class="w-full p-2 border border-slate-300 rounded text-sm bg-slate-50" value="${escapeHtml(v)}"></div>`;}
+function switchTubeTab(target){document.querySelectorAll('.tube-tab').forEach(el=>{el.classList.remove('bg-teal-100','text-teal-800');el.classList.add('bg-slate-100','text-slate-600');});const act=document.getElementById('tab-'+target);if(act){act.classList.remove('bg-slate-100','text-slate-600');act.classList.add('bg-teal-100','text-teal-800');}document.querySelectorAll('.tube-panel').forEach(el=>el.classList.add('hidden'));document.getElementById('panel-'+target)?.classList.remove('hidden');}
+function submitDynamicTube(code){const t=(v17ClinicalConfig?.tubes||[]).find(x=>x.code===code);if(!t)return;const parts=(t.fields||[]).map(f=>{const el=document.getElementById(`dyn-tube-${code}-${f.key}`);return el?.value?`${f.label||f.key}: ${el.value}`:'';}).filter(Boolean);logTube(t.name,parts.length?parts.join(', '):'已建立');}
+function renderV17Blood(list){const grid=document.getElementById('blood-product-grid');if(!grid)return;grid.innerHTML=list.map(b=>`<button onclick='setBloodProd(${JSON.stringify(b.code)})' id="btn-b-${escapeHtml(b.code)}" class="blood-prod border-2 border-slate-200 py-3 rounded-lg text-sm font-bold bg-white text-slate-700 btn-active transition-colors">${escapeHtml(b.name)}</button>`).join('');}
+function setBloodProd(prod){bloodProd=prod;document.querySelectorAll('.blood-prod').forEach(el=>{el.className='blood-prod border-2 border-slate-200 py-3 rounded-lg text-sm font-bold bg-white text-slate-700 btn-active transition-colors';});const act=document.getElementById('btn-b-'+prod);if(act)act.className=`blood-prod border-2 py-3 rounded-lg text-sm font-bold ${bloodColorBg} text-white btn-active transition-colors border-transparent`;const b=(v17ClinicalConfig?.blood_products||[]).find(x=>x.code===prod);if(b?.default_units!=null)document.getElementById('val-blood-u').value=b.default_units;}
+
+function openMedModal(name){activeMedName=name;const info=medDict[name];activeMedQty=Number(info?.defaultQty)||1;prepSol=info?.mixSolutions?.[0]||'N/S';prepVol=String(info?.mixVolumes?.[0]||250);document.getElementById('med-modal-title').innerText=name;const genericEl=document.getElementById('med-modal-generic'),calcPanel=document.getElementById('med-calc-panel');if(info){genericEl.innerText=info.generic;genericEl.classList.remove('hidden');calcPanel.classList.remove('hidden');document.getElementById('med-modal-base').innerText=`1 支 = ${info.val} ${info.unit} / ${info.ml} ml`;}else{genericEl.classList.add('hidden');calcPanel.classList.add('hidden');}document.getElementById('med-modal-unit').innerText=name.includes('500ml')?'瓶':'支';const conflicts=checkIncompat(name),warn=document.getElementById('med-incompat-warning');if(conflicts.length){warn.classList.remove('hidden');document.getElementById('med-incompat-list').innerText=conflicts.join(', ');}else warn.classList.add('hidden');const qc=document.getElementById('quick-qty-container');qc.innerHTML='';(info?.quick||[]).forEach(num=>{const b=document.createElement('button');b.className='px-6 py-2 bg-slate-100 text-slate-700 font-bold text-lg rounded-lg border border-slate-300 btn-active shadow-sm';b.innerText=num;b.onclick=()=>{activeMedQty=Number(num);refreshMedUI();};qc.appendChild(b);});renderV17PrepOptions(info);refreshMedUI();showModal('modal-med');}
+function renderV17PrepOptions(info){const s=document.getElementById('prep-solution-options'),v=document.getElementById('prep-volume-options');if(s)s.innerHTML=(info?.mixSolutions||[]).map(x=>`<button onclick='setPrepSol(${JSON.stringify(String(x))})' data-prep-sol="${escapeHtml(x)}" class="flex-1 py-3 rounded-lg text-base font-bold bg-white text-slate-500 border-2 border-slate-200 shadow-sm">${escapeHtml(x)}</button>`).join('');if(v)v.innerHTML=(info?.mixVolumes||[]).map(x=>`<button onclick="setPrepVol('${escapeHtml(x)}')" data-prep-vol="${escapeHtml(x)}" class="flex-1 py-3 rounded-lg text-base font-bold bg-white text-slate-500 border-2 border-slate-200 shadow-sm">${escapeHtml(x)}</button>`).join('');document.getElementById('med-pump-unit').innerText=info?.pumpUnit||'滴/分';if(info?.pumpDefault!==''&&info?.pumpDefault!=null)document.getElementById('med-pump-run').value=info.pumpDefault;}
+function updatePrepUI(){const act='flex-1 py-3 rounded-lg text-base font-bold bg-blue-100 text-blue-700 border-2 border-blue-400 shadow-sm transition-all',ina='flex-1 py-3 rounded-lg text-base font-bold bg-white text-slate-500 border-2 border-slate-200 shadow-sm transition-all';document.querySelectorAll('[data-prep-sol]').forEach(b=>b.className=b.dataset.prepSol===String(prepSol)?act:ina);document.querySelectorAll('[data-prep-vol]').forEach(b=>b.className=b.dataset.prepVol===String(prepVol)?act:ina);}
+function refreshMedUI(){document.getElementById('med-modal-qty').innerText=activeMedQty;const info=medDict[activeMedName];if(info){document.getElementById('med-modal-total').innerText=`總計: ${formatDose(info.val*activeMedQty)} ${info.unit} / ${formatDose(info.ml*activeMedQty)} ml`;}const prep=document.getElementById('med-prep-container'),hasMix=(info?.mixSolutions?.length||0)>0&&(info?.mixVolumes?.length||0)>0,pumpVisible=!!info?.hasPump&&activeMedQty>=Number(info.pumpMinQty||1);if(hasMix||pumpVisible){prep.classList.remove('hidden');prep.classList.add('flex');}else{prep.classList.add('hidden');prep.classList.remove('flex');}document.getElementById('prep-solution-options')?.parentElement?.classList.toggle('hidden',!hasMix);document.getElementById('prep-volume-options')?.parentElement?.classList.toggle('hidden',!hasMix);document.getElementById('med-pump-row')?.classList.toggle('hidden',!pumpVisible);updatePrepUI();}
+function confirmMed(){let type=activeMedName.includes('大量點滴')?'大量點滴':'給藥',unit=activeMedName.includes('500ml')?'瓶':'支',detail=`${activeMedName} x ${activeMedQty} ${unit}`,info=medDict[activeMedName];if(info)detail+=` (${formatDose(info.val*activeMedQty)}${info.unit}/${formatDose(info.ml*activeMedQty)}ml)`;const hasMix=(info?.mixSolutions?.length||0)>0&&(info?.mixVolumes?.length||0)>0,pumpVisible=!!info?.hasPump&&activeMedQty>=Number(info.pumpMinQty||1);const pumpRun=pumpVisible?document.getElementById('med-pump-run').value:null;if(hasMix)detail+=` (加至 ${prepSol} ${prepVol}mL${pumpVisible?`, Pump run: ${pumpRun} ${info.pumpUnit||'滴/分'}`:''})`;if(info?.systemKey==='epinephrine'||activeMedName==='Adrenalin'){updateMedSummary(activeMedName,activeMedQty);const count=medSummaryDict[activeMedName];stopEpiAlarm();epiSeconds=180;epiTargetTimeMs=Date.now()+180000;const cb=document.getElementById('epi-badge-count'),tb=document.getElementById('epi-timer-badge');cb.innerText=count;cb.classList.remove('hidden');tb.innerText='03:00';tb.classList.remove('hidden','bg-red-800','bg-slate-500','timer-warning');tb.classList.add('bg-red-600');}else updateMedSummary(activeMedName,activeMedQty);const conflicts=checkIncompat(activeMedName);givenMedSet.add(activeMedName);addLocalEvent(type,detail,{kind:'medication',medication_name:activeMedName,qty:activeMedQty,unit,preparation:hasMix?{solution:prepSol,volume_ml:Number(prepVol),pump_run:pumpVisible&&pumpRun?Number(pumpRun):null,pump_unit:info?.pumpUnit||'滴/分'}:null},false);if(conflicts.length)setTimeout(()=>showToast(`⚠️ 注意：與 ${conflicts.join(', ')} 不相容<br><span class="text-[13px] text-red-200 mt-1 block">請建立另一條 IV Set (分開給藥)</span>`,true,5000),100);else showToast(`${type}已紀錄`);closeModal();}
+
+// App 啟動後補載 V17 設定；不改 V16 CPR 核心流程
+async function v17Boot(){if(currentAppMode==='mobile'){let tries=0;const t=setInterval(async()=>{tries++;if(deviceUnit){clearInterval(t);await loadV17ClinicalConfig(deviceUnit);}if(tries>20)clearInterval(t);},250);}else{loadV17RegistrationUnits();}}
+setTimeout(v17Boot,400);
+
+
+// V17：管理者監看全院時顯示單位代碼，歷史讀取上限提高
+async function queryDesktopCases(status) {
+    let q = supabaseClient.from('cpr_cases')
+        .select('id,unit_id,client_case_key,bed_no,recorder_staff_no,started_at,rosc_at,ended_at,status,close_reason,runtime_state,updated_at,units(code,name)')
+        .eq('status', status)
+        .order('started_at', { ascending:false })
+        .limit(status === 'active' ? 100 : 1000);
+    if(desktopProfile.role !== 'admin' && desktopProfile.unit_id) q = q.eq('unit_id', desktopProfile.unit_id);
+    if(desktopProfile.role === 'unit' && status === 'closed') q = q.gte('started_at', new Date(Date.now() - 3*24*60*60*1000).toISOString());
+    const { data, error } = await q; if(error) throw error; return data || [];
+}
+function v17CaseUnitCode(c){ return c?.units?.code || desktopUnit?.code || 'CPR'; }
+function renderDesktopCaseLists(active, history, latestMap) {
+    document.getElementById('desktop-active-count').innerText = active.length;
+    const activeEl = document.getElementById('desktop-active-list');
+    activeEl.innerHTML = active.length ? active.map(c => { const latest=latestMap[c.id]; const unit=v17CaseUnitCode(c); return `<button onclick="openDesktopCase('${c.id}')" class="w-full text-left border rounded-xl p-3 transition ${desktopSelectedCaseId===c.id?'border-blue-500 bg-blue-50':'border-slate-200 hover:border-blue-300 bg-white'}"><div class="flex justify-between items-center gap-2"><span class="font-extrabold text-slate-900">${desktopProfile?.role==='admin'?escapeHtml(unit)+'｜':''}${escapeHtml(c.bed_no?c.bed_no+'床':'床號待補')}</span><span class="text-[10px] font-bold bg-red-100 text-red-700 px-2 py-1 rounded-full">CPR中</span></div><div class="text-xs text-slate-500 mt-1">開始 ${formatDesktopDate(c.started_at)}</div><div class="text-sm mt-2 truncate ${latest?'text-slate-700':'text-slate-400'}">${latest?`最新：${escapeHtml(latest.action)}｜${escapeHtml(latest.detail||'')}`:'尚無處置紀錄'}</div></button>`; }).join('') : '<div class="text-sm text-slate-400 text-center py-8">目前沒有進行中的 CPR</div>';
+    const histEl=document.getElementById('desktop-history-list');
+    histEl.innerHTML=history.length?history.map(c=>`<button onclick="openDesktopCase('${c.id}')" class="w-full text-left border rounded-xl p-3 transition ${desktopSelectedCaseId===c.id?'border-blue-500 bg-blue-50':'border-slate-200 hover:border-blue-300 bg-white'}"><div class="flex justify-between items-center gap-2"><span class="font-extrabold text-slate-800">${desktopProfile?.role==='admin'?escapeHtml(v17CaseUnitCode(c))+'｜':''}${escapeHtml(c.bed_no?c.bed_no+'床':'床號未填')}</span><span class="text-[10px] font-bold bg-slate-100 text-slate-600 px-2 py-1 rounded-full">已封存</span></div><div class="text-xs text-slate-500 mt-1">${formatDesktopDate(c.started_at)}</div><div class="text-[11px] text-slate-400 mt-1">${desktopCloseReason(c.close_reason)}</div></button>`).join(''):'<div class="text-sm text-slate-400 text-center py-8">目前沒有歷史紀錄</div>';
+}
+async function openDesktopCase(caseId, silent=false){desktopSelectedCaseId=caseId;const c=desktopCases.find(x=>x.id===caseId);if(!c)return;try{const{data,error}=await supabaseClient.from('cpr_events').select('*').eq('cpr_case_id',caseId).eq('is_deleted',false).order('event_time',{ascending:false});if(error)throw error;desktopEvents=data||[];document.getElementById('desktop-empty-detail').classList.add('hidden');document.getElementById('desktop-case-detail').classList.remove('hidden');document.getElementById('desktop-case-name').innerText=`${v17CaseUnitCode(c)}｜${c.bed_no?c.bed_no+'床':'床號待補'}`;const statusEl=document.getElementById('desktop-case-status');if(c.status==='active'){statusEl.innerText=c.rosc_at?'ROSC後觀察中':'CPR中';statusEl.className=c.rosc_at?'text-xs font-bold px-2 py-1 rounded-full bg-emerald-100 text-emerald-700':'text-xs font-bold px-2 py-1 rounded-full bg-red-100 text-red-700';}else{statusEl.innerText='已封存';statusEl.className='text-xs font-bold px-2 py-1 rounded-full bg-slate-100 text-slate-600';}document.getElementById('desktop-case-meta').innerText=`開始：${formatDesktopDate(c.started_at)}｜紀錄員編：${c.recorder_staff_no||'未填'}${c.ended_at?`｜結束：${formatDesktopDate(c.ended_at)}`:''}`;document.getElementById('desktop-case-duration').dataset.caseId=c.id;document.getElementById('desktop-case-duration').innerText=formatDesktopCaseDuration(c);renderDesktopTimeline();renderDesktopSummaries();if(!silent)renderDesktopCaseLists(desktopCases.filter(x=>x.status==='active'),desktopCases.filter(x=>x.status==='closed'),{});}catch(err){console.error('讀取 CPR 詳細資料失敗',err);}}

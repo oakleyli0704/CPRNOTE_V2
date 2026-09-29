@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>CPR 快速紀錄-V16.2</title>
+    <title>CPR 快速紀錄-V17</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -12,7 +12,7 @@
 <body class="bg-slate-100 min-h-screen flex flex-col font-sans text-slate-800 select-none pb-[80px]">
 
 
-    <!-- ==================== V16 電腦版：同網址即時監看 ==================== -->
+    <!-- ==================== V17 電腦版：即時監看＋護理長／管理者後台 ==================== -->
     <div id="desktop-app" class="hidden min-h-screen w-full bg-slate-100 select-text">
         <div id="desktop-login" class="min-h-screen flex items-center justify-center p-6">
             <div class="w-full max-w-md bg-white rounded-2xl shadow-xl border border-slate-200 p-7">
@@ -21,19 +21,19 @@
                         <i class="fa-solid fa-heart-pulse"></i>
                     </div>
                     <h1 class="text-2xl font-extrabold text-slate-800">CPR 即時監看</h1>
-                    <p class="text-sm text-slate-500 mt-1">請使用單位帳號登入</p>
+                    <p class="text-sm text-slate-500 mt-1">單位、護理長與管理者皆由此登入</p>
                 </div>
                 <div class="space-y-4">
                     <div>
-                        <label class="block text-sm font-bold text-slate-600 mb-1">單位帳號</label>
-                        <input id="desktop-username" type="text" autocomplete="username" placeholder="例如：12B" class="w-full p-3 border-2 border-slate-200 rounded-xl font-bold uppercase focus:outline-none focus:border-blue-400">
+                        <label class="block text-sm font-bold text-slate-600 mb-1">帳號</label>
+                        <input id="desktop-username" type="text" autocomplete="username" placeholder="例如：12B / ADMIN / 您的帳號" class="w-full p-3 border-2 border-slate-200 rounded-xl font-bold uppercase focus:outline-none focus:border-blue-400">
                     </div>
                     <div>
                         <label class="block text-sm font-bold text-slate-600 mb-1">密碼</label>
                         <div class="relative">
                             <input id="desktop-password" type="password" autocomplete="current-password" placeholder="請輸入密碼" class="w-full p-3 pr-12 border-2 border-slate-200 rounded-xl font-bold focus:outline-none focus:border-blue-400">
                             <button type="button" onclick="togglePasswordVisibility('desktop-password','desktop-password-eye')" class="absolute right-1 top-1 bottom-1 w-10 text-slate-500 hover:text-blue-600" aria-label="顯示或隱藏密碼">
-                                <i id="desktop-password-eye" class="fa-solid fa-eye"></i>
+                                <i id="desktop-password-eye" class="fa-solid fa-eye-slash"></i>
                             </button>
                         </div>
                     </div>
@@ -41,8 +41,37 @@
                     <button id="desktop-login-btn" onclick="desktopLogin()" class="w-full py-3.5 bg-blue-600 text-white rounded-xl font-bold text-base btn-active shadow-sm">
                         <i class="fa-solid fa-right-to-bracket mr-1"></i> 登入
                     </button>
+                    <button type="button" onclick="showHeadNurseRegister(true)" class="w-full py-2.5 bg-white text-blue-700 border border-blue-200 rounded-xl font-bold text-sm btn-active">
+                        <i class="fa-solid fa-user-plus mr-1"></i> 護理長申請帳號
+                    </button>
                 </div>
-                <p class="text-[11px] text-slate-400 text-center mt-5">電腦版僅供即時監看與查閱，CPR 紀錄不可在此修改。</p>
+                <p class="text-[11px] text-slate-400 text-center mt-5">CPR 臨床紀錄在電腦版一律唯讀；護理長與管理者僅能調整系統設定。</p>
+
+                <div id="head-nurse-register" class="hidden mt-6 pt-5 border-t border-slate-200">
+                    <div class="flex items-center justify-between mb-4">
+                        <div>
+                            <h2 class="font-extrabold text-slate-800">護理長帳號申請</h2>
+                            <p class="text-xs text-slate-500 mt-0.5">送出後需由管理者核准才可登入。</p>
+                        </div>
+                        <button type="button" onclick="showHeadNurseRegister(false)" class="w-9 h-9 rounded-lg bg-slate-100 text-slate-500"><i class="fa-solid fa-xmark"></i></button>
+                    </div>
+                    <div class="space-y-3">
+                        <div><label class="block text-xs font-bold text-slate-600 mb-1">申請帳號</label><input id="hn-reg-username" class="w-full p-3 border-2 border-slate-200 rounded-xl font-bold" placeholder="例如：HN001"></div>
+                        <div><label class="block text-xs font-bold text-slate-600 mb-1">姓名 / 顯示名稱</label><input id="hn-reg-name" class="w-full p-3 border-2 border-slate-200 rounded-xl" placeholder="使用假資料測試"></div>
+                        <div><label class="block text-xs font-bold text-slate-600 mb-1">員編</label><input id="hn-reg-employee" class="w-full p-3 border-2 border-slate-200 rounded-xl" placeholder="使用假資料測試"></div>
+                        <div><label class="block text-xs font-bold text-slate-600 mb-1">單位</label><select id="hn-reg-unit" class="w-full p-3 border-2 border-slate-200 rounded-xl bg-white font-bold"><option>讀取中...</option></select></div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-600 mb-1">密碼</label>
+                            <div class="relative"><input id="hn-reg-password" type="password" class="w-full p-3 pr-12 border-2 border-slate-200 rounded-xl" placeholder="至少 8 碼"><button type="button" onclick="togglePasswordVisibility('hn-reg-password','hn-reg-password-eye')" class="absolute right-1 top-1 bottom-1 w-10 text-slate-500"><i id="hn-reg-password-eye" class="fa-solid fa-eye-slash"></i></button></div>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-600 mb-1">再次輸入密碼</label>
+                            <div class="relative"><input id="hn-reg-password2" type="password" class="w-full p-3 pr-12 border-2 border-slate-200 rounded-xl" placeholder="再次輸入"><button type="button" onclick="togglePasswordVisibility('hn-reg-password2','hn-reg-password2-eye')" class="absolute right-1 top-1 bottom-1 w-10 text-slate-500"><i id="hn-reg-password2-eye" class="fa-solid fa-eye-slash"></i></button></div>
+                        </div>
+                        <div id="hn-reg-message" class="hidden text-sm font-bold p-3 rounded-xl"></div>
+                        <button onclick="submitHeadNurseRegistration()" class="w-full py-3 bg-blue-600 text-white rounded-xl font-bold">送出申請</button>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -64,9 +93,15 @@
                         <button onclick="desktopLogout()" class="px-3 py-2 rounded-lg bg-slate-700 text-white text-sm font-bold hover:bg-slate-600"><i class="fa-solid fa-right-from-bracket mr-1"></i>登出</button>
                     </div>
                 </div>
+                <div id="desktop-nav" class="max-w-[1500px] mx-auto px-5 pb-3 flex gap-2 overflow-x-auto no-scrollbar">
+                    <button id="nav-monitor" onclick="switchDesktopView('monitor')" class="desktop-main-nav px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-bold whitespace-nowrap"><i class="fa-solid fa-heart-pulse mr-1"></i>CPR監看</button>
+                    <button id="nav-unit-settings" onclick="switchDesktopView('unit')" class="desktop-main-nav hidden px-4 py-2 rounded-lg bg-slate-800 text-slate-200 text-sm font-bold whitespace-nowrap"><i class="fa-solid fa-sliders mr-1"></i>單位設定</button>
+                    <button id="nav-admin" onclick="switchDesktopView('admin')" class="desktop-main-nav hidden px-4 py-2 rounded-lg bg-slate-800 text-slate-200 text-sm font-bold whitespace-nowrap"><i class="fa-solid fa-gear mr-1"></i>管理者後台</button>
+                </div>
             </header>
 
             <main class="max-w-[1500px] mx-auto p-5">
+                <div id="desktop-monitor-panel">
                 <div class="grid grid-cols-12 gap-5">
                     <aside class="col-span-4 xl:col-span-3 space-y-4">
                         <section class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
@@ -155,6 +190,26 @@
                             </div>
                         </div>
                     </section>
+                </div>
+
+                <div id="desktop-unit-settings-panel" class="hidden space-y-5">
+                    <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+                        <h2 class="text-xl font-extrabold text-slate-800"><i class="fa-solid fa-sliders text-blue-600 mr-2"></i><span id="unit-settings-title">單位設定</span></h2>
+                        <p class="text-sm text-slate-500 mt-1">護理長的修改只影響自己的單位，不會改到其他病房。</p>
+                    </div>
+                    <div id="unit-settings-content" class="space-y-5"><div class="text-center text-slate-400 py-10">讀取中...</div></div>
+                </div>
+
+                <div id="desktop-admin-panel" class="hidden space-y-5">
+                    <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 flex gap-2 flex-wrap">
+                        <button data-admin-section="units" onclick="switchAdminSection('units')" class="admin-section-btn bg-blue-600 text-white px-4 py-2 rounded-lg font-bold text-sm">單位管理</button>
+                        <button data-admin-section="headnurses" onclick="switchAdminSection('headnurses')" class="admin-section-btn bg-slate-100 text-slate-700 px-4 py-2 rounded-lg font-bold text-sm">護理長帳號</button>
+                        <button data-admin-section="medications" onclick="switchAdminSection('medications')" class="admin-section-btn bg-slate-100 text-slate-700 px-4 py-2 rounded-lg font-bold text-sm">藥物 / 泡製 / Pump</button>
+                        <button data-admin-section="rhythms" onclick="switchAdminSection('rhythms')" class="admin-section-btn bg-slate-100 text-slate-700 px-4 py-2 rounded-lg font-bold text-sm">心律 / 電擊</button>
+                        <button data-admin-section="tubes" onclick="switchAdminSection('tubes')" class="admin-section-btn bg-slate-100 text-slate-700 px-4 py-2 rounded-lg font-bold text-sm">管路 / 血品</button>
+                        <button data-admin-section="audit" onclick="switchAdminSection('audit')" class="admin-section-btn bg-slate-100 text-slate-700 px-4 py-2 rounded-lg font-bold text-sm">操作紀錄</button>
+                    </div>
+                    <div id="admin-section-content"><div class="text-center text-slate-400 py-10">讀取中...</div></div>
                 </div>
             </main>
         </div>
@@ -260,7 +315,7 @@
             <!-- 心律面板 -->
             <div class="bg-white rounded-xl shadow-sm p-3 border border-slate-100">
                 <h3 class="font-bold text-slate-500 mb-2 text-xs">心律 (Rhythm)</h3>
-                <div class="flex flex-col gap-2">
+                <div id="rhythm-buttons" class="flex flex-col gap-2">
                     <div class="flex gap-2">
                         <button onclick="logRhythm('Asystole')" class="flex-1 bg-slate-100 text-slate-700 border border-slate-300 py-4 rounded-lg font-bold text-[15px] md:text-lg btn-active">Asystole</button>
                         <button onclick="logRhythm('PEA')" class="flex-1 bg-slate-100 text-slate-700 border border-slate-300 py-4 rounded-lg font-bold text-[15px] md:text-lg btn-active">PEA</button>
@@ -282,7 +337,7 @@
                         <span>⚡ 建議電擊 (選擇焦耳)</span>
                         <button onclick="resetShock()" class="text-slate-400 text-[10px] bg-slate-100 px-2 py-1 rounded">取消</button>
                     </h3>
-                    <div class="grid grid-cols-3 gap-2">
+                    <div id="shock-energy-buttons" class="grid grid-cols-3 gap-2">
                         <button onclick="logEvent('電擊', '150 J'); resetShock();" class="bg-red-500 text-white py-3 rounded-lg font-bold text-base md:text-lg btn-active shadow-sm">150 J</button>
                         <button onclick="logEvent('電擊', '200 J'); resetShock();" class="bg-red-500 text-white py-3 rounded-lg font-bold text-base md:text-lg btn-active shadow-sm">200 J</button>
                         <button onclick="logEvent('電擊', '360 J'); resetShock();" class="bg-red-500 text-white py-3 rounded-lg font-bold text-base md:text-lg btn-active shadow-sm">360 J</button>
@@ -302,7 +357,7 @@
                     <span id="epi-timer-badge" class="hidden bg-red-600 text-white text-sm px-2 py-1 rounded-md">03:00</span>
                 </button>
 
-                <div class="grid grid-cols-2 gap-2">
+                <div id="med-button-grid" class="grid grid-cols-2 gap-2">
                     <button onclick="openMedModal('Adenocor')" class="bg-white text-slate-800 border border-slate-300 py-4 rounded-lg font-bold text-[15px] md:text-lg btn-active px-1 text-center shadow-sm">Adenocor</button>
                     <button onclick="openMedModal('Atropine')" class="bg-white text-slate-800 border border-slate-300 py-4 rounded-lg font-bold text-[15px] md:text-lg btn-active px-1 text-center shadow-sm">Atropine</button>
                     <button onclick="openMedModal('Cordarone')" class="bg-white text-slate-800 border border-slate-300 py-4 rounded-lg font-bold text-[15px] md:text-lg btn-active px-1 text-center shadow-sm">Cordarone</button>
@@ -336,7 +391,7 @@
                     <button id="btn-b-type-備血" onclick="setBloodType('備血')" class="flex-1 py-3 text-sm font-bold rounded-lg bg-white text-blue-600 border-2 border-blue-200 shadow-sm transition-colors btn-active">備血</button>
                 </div>
 
-                <div class="grid grid-cols-2 gap-2 mb-3">
+                <div id="blood-product-grid" class="grid grid-cols-2 gap-2 mb-3">
                     <button onclick="setBloodProd('LPRBC')" id="btn-b-LPRBC" class="blood-prod border-2 border-slate-200 py-3 rounded-lg text-sm font-bold bg-white text-slate-700 btn-active transition-colors">LPRBC</button>
                     <button onclick="setBloodProd('FFP')" id="btn-b-FFP" class="blood-prod border-2 border-slate-200 py-3 rounded-lg text-sm font-bold bg-white text-slate-700 btn-active transition-colors">FFP</button>
                     <button onclick="setBloodProd('CRYO')" id="btn-b-CRYO" class="blood-prod border-2 border-slate-200 py-3 rounded-lg text-sm font-bold bg-white text-slate-700 btn-active transition-colors">CRYO</button>
@@ -389,7 +444,7 @@
             <div class="bg-white rounded-xl shadow-sm p-3 border border-slate-100 mb-4">
                 <h3 class="font-bold text-slate-500 mb-2 text-xs">管路建立 (Lines/Tubes)</h3>
                 
-                <div class="flex overflow-x-auto gap-2 pb-2 no-scrollbar border-b border-slate-100">
+                <div id="tube-tabs-container" class="flex overflow-x-auto gap-2 pb-2 no-scrollbar border-b border-slate-100">
                     <button onclick="switchTubeTab('endo')" id="tab-endo" class="tube-tab px-3 py-1.5 rounded-full bg-teal-100 text-teal-800 font-bold text-xs flex-shrink-0">Endo</button>
                     <button onclick="switchTubeTab('ng')" id="tab-ng" class="tube-tab px-3 py-1.5 rounded-full bg-slate-100 text-slate-600 font-bold text-xs flex-shrink-0">NG</button>
                     <button onclick="switchTubeTab('foley')" id="tab-foley" class="tube-tab px-3 py-1.5 rounded-full bg-slate-100 text-slate-600 font-bold text-xs flex-shrink-0">Foley</button>
@@ -399,7 +454,7 @@
                     <button onclick="switchTubeTab('io')" id="tab-io" class="tube-tab px-3 py-1.5 rounded-full bg-slate-100 text-slate-600 font-bold text-xs flex-shrink-0">骨內針</button>
                 </div>
 
-                <div class="pt-3">
+                <div id="tube-panels-container" class="pt-3">
                     <div id="panel-endo" class="tube-panel flex gap-2 items-end">
                         <div class="flex-1"><label class="block text-[10px] text-slate-500 mb-1">內徑(mm)</label><input type="number" inputmode="decimal" step="0.5" id="val-endo-size" value="7.5" class="w-full p-2 border border-slate-300 rounded text-sm text-center bg-slate-50"></div>
                         <div class="flex-1"><label class="block text-[10px] text-slate-500 mb-1">深度(cm)</label><input type="number" inputmode="decimal" id="val-endo-depth" value="22" class="w-full p-2 border border-slate-300 rounded text-sm text-center bg-slate-50"></div>
@@ -575,23 +630,23 @@
             <div id="med-prep-container" class="hidden flex-col gap-4 bg-slate-50 border border-slate-200 p-4 rounded-xl">
                 <div class="flex flex-col gap-2">
                     <label class="text-sm font-bold text-slate-600">泡製溶液</label>
-                    <div class="flex gap-2 w-full">
+                    <div id="prep-solution-options" class="flex gap-2 w-full">
                         <button id="btn-sol-NS" onclick="setPrepSol('N/S')" class="flex-1 py-3 rounded-lg text-base font-bold bg-white text-slate-500 border-2 border-slate-200 shadow-sm transition-all">N/S</button>
                         <button id="btn-sol-D5W" onclick="setPrepSol('D5W')" class="flex-1 py-3 rounded-lg text-base font-bold bg-white text-slate-500 border-2 border-slate-200 shadow-sm transition-all">D5W</button>
                     </div>
                 </div>
                 <div class="flex flex-col gap-2">
                     <label class="text-sm font-bold text-slate-600">容量 (mL)</label>
-                    <div class="flex gap-2 w-full">
+                    <div id="prep-volume-options" class="flex gap-2 w-full">
                         <button id="btn-vol-250" onclick="setPrepVol('250')" class="flex-1 py-3 rounded-lg text-base font-bold bg-white text-slate-500 border-2 border-slate-200 shadow-sm transition-all">250</button>
                         <button id="btn-vol-500" onclick="setPrepVol('500')" class="flex-1 py-3 rounded-lg text-base font-bold bg-white text-slate-500 border-2 border-slate-200 shadow-sm transition-all">500</button>
                     </div>
                 </div>
-                <div class="flex justify-between items-center pt-3 border-t border-slate-200">
-                    <label class="text-sm font-bold text-slate-600">Pump Run</label>
+                <div id="med-pump-row" class="flex justify-between items-center pt-3 border-t border-slate-200">
+                    <label id="med-pump-label" class="text-sm font-bold text-slate-600">Pump Run</label>
                     <div class="flex items-center gap-2">
                         <input type="number" inputmode="decimal" id="med-pump-run" value="10" class="w-20 p-3 border border-slate-300 rounded-lg text-center font-bold text-base bg-white shadow-inner">
-                        <span class="text-sm font-bold text-slate-500">滴/分</span>
+                        <span id="med-pump-unit" class="text-sm font-bold text-slate-500">滴/分</span>
                     </div>
                 </div>
             </div>
@@ -611,7 +666,7 @@
             
             <div>
                 <label class="block text-sm font-bold text-slate-600 mb-2">1. 評估心律</label>
-                <div class="flex flex-col gap-2">
+                <div id="cycle-rhythm-buttons" class="flex flex-col gap-2">
                     <div class="flex gap-2">
                         <button onclick="selectCycleRhythm('Asystole')" id="cr-Asystole" class="cycle-r-btn flex-1 bg-slate-50 text-slate-500 border border-slate-200 py-2 rounded-lg font-bold text-sm btn-active">Asystole</button>
                         <button onclick="selectCycleRhythm('PEA')" id="cr-PEA" class="cycle-r-btn flex-1 bg-slate-50 text-slate-500 border border-slate-200 py-2 rounded-lg font-bold text-sm btn-active">PEA</button>

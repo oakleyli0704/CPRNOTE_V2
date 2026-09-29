@@ -1,5 +1,5 @@
-// CPRNOTE V17.4 - 管理者後台顯示修正版
-const CPRNOTE_APP_VERSION = "17.4.0";
+// CPRNOTE V17.5 - 後台 UI/UX + RWD + 密碼回饋修正版
+const CPRNOTE_APP_VERSION = "17.5.0";
 // CPRNOTE V17.1 - cache refresh build
 // --- 全域變數 ---
         let isRunning = false;
@@ -2700,6 +2700,10 @@ var v17MixSolutions = [];
 var v17MixVolumes = [];
 var v17AdminMedAssociations = { solutions:{}, volumes:{} };
 var v17AdminEditingUnit = null;
+var v17NextMedicationSort = 1;
+var v17NextRhythmSort = 1;
+var v17NextTubeSort = 1;
+var v17NextBloodSort = 1;
 
 function getV17SettingsUnit() {
     return desktopProfile?.role === 'admin' ? v17AdminEditingUnit : desktopUnit;
@@ -2707,6 +2711,55 @@ function getV17SettingsUnit() {
 
 function isV17AdminUnitEditing() {
     return desktopProfile?.role === 'admin' && !!v17AdminEditingUnit;
+}
+
+
+function renderV17Toggle(id, checked, label, disabled=false, extra='') {
+    return `<label class="v17-toggle"><input id="${id}" type="checkbox" ${checked?'checked':''} ${disabled?'disabled':''} ${extra}><span class="v17-toggle-track"></span><span class="v17-toggle-text">${escapeHtml(label)}</span></label>`;
+}
+
+function showV17Toast(msg, error=false, duration=3200) {
+    let toast=document.getElementById('v17-desktop-toast');
+    if(!toast){
+        toast=document.createElement('div');
+        toast.id='v17-desktop-toast';
+        toast.className='v17-toast';
+        toast.innerHTML='<i class="v17-toast-icon fa-solid fa-circle-check"></i><div id="v17-desktop-toast-msg" class="font-bold text-sm leading-relaxed"></div>';
+        document.body.appendChild(toast);
+    }
+    toast.classList.toggle('error',!!error);
+    const icon=toast.querySelector('.v17-toast-icon');
+    if(icon) icon.className=`v17-toast-icon fa-solid ${error?'fa-triangle-exclamation':'fa-circle-check'}`;
+    const msgEl=document.getElementById('v17-desktop-toast-msg');
+    if(msgEl) msgEl.innerText=String(msg||'');
+    toast.classList.add('show');
+    clearTimeout(toast._hideTimer);
+    toast._hideTimer=setTimeout(()=>toast.classList.remove('show'),duration);
+}
+
+function setV17ButtonBusy(btn, busy, busyText='處理中...') {
+    if(!btn) return;
+    if(busy){
+        if(!btn.dataset.originalHtml) btn.dataset.originalHtml=btn.innerHTML;
+        btn.disabled=true;
+        btn.innerHTML=`<i class="fa-solid fa-spinner fa-spin"></i>${busyText}`;
+    }else{
+        btn.disabled=false;
+        if(btn.dataset.originalHtml){ btn.innerHTML=btn.dataset.originalHtml; delete btn.dataset.originalHtml; }
+    }
+}
+
+function toggleAdminMedPumpFields(id){
+    const root=document.getElementById(`admin-med-${id}`); if(!root)return;
+    const on=!!root.querySelector('[data-f="has_pump"]')?.checked;
+    root.querySelectorAll('[data-pump-field]').forEach(el=>el.disabled=!on);
+    const block=root.querySelector('[data-pump-block]'); if(block)block.classList.toggle('v17-muted-block',!on);
+}
+function toggleAdminMedMixFields(id){
+    const root=document.getElementById(`admin-med-${id}`); if(!root)return;
+    const on=!!root.querySelector('[data-f="has_mix_ui"]')?.checked;
+    root.querySelectorAll('[data-sol],[data-vol]').forEach(el=>el.disabled=!on);
+    const block=root.querySelector('[data-mix-block]'); if(block)block.classList.toggle('v17-muted-block',!on);
 }
 
 // 密碼預設隱藏時顯示「閉眼」；點一下顯示密碼後改成開眼
@@ -2932,7 +2985,7 @@ async function loadHeadNurseSettings() {
               <div><label class="v17-label">新密碼</label><div class="relative"><input id="unit-new-password" type="password" class="v17-input pr-12" placeholder="至少 8 碼"><button onclick="togglePasswordVisibility('unit-new-password','unit-new-password-eye')" class="absolute right-1 top-1 bottom-1 w-10 text-slate-500"><i id="unit-new-password-eye" class="fa-solid fa-eye-slash"></i></button></div></div>
               <div><label class="v17-label">再次輸入</label><div class="relative"><input id="unit-new-password2" type="password" class="v17-input pr-12" placeholder="再次輸入"><button onclick="togglePasswordVisibility('unit-new-password2','unit-new-password2-eye')" class="absolute right-1 top-1 bottom-1 w-10 text-slate-500"><i id="unit-new-password2-eye" class="fa-solid fa-eye-slash"></i></button></div></div>
             </div>
-            <button onclick="changeOwnUnitPassword()" class="mt-3 px-4 py-2.5 bg-blue-600 text-white rounded-lg font-bold">儲存新密碼</button>
+            <div class="v17-actions justify-start"><button id="unit-password-save-btn" onclick="changeOwnUnitPassword(this)" class="v17-btn v17-btn-primary"><i class="fa-solid fa-floppy-disk"></i>儲存新密碼</button></div>
           </section>
           <section class="v17-card p-5"><h3 class="font-extrabold text-slate-800 mb-3"><i class="fa-solid fa-pills text-purple-500 mr-1"></i>藥物設定</h3><div class="space-y-3">${(medsR.data||[]).map(m=>renderHNMedCard(m,mus[m.id]||{})).join('')}</div></section>
           <section class="v17-card p-5"><h3 class="font-extrabold text-slate-800 mb-3"><i class="fa-solid fa-syringe text-teal-500 mr-1"></i>管路預設</h3><div class="space-y-3">${(tubesR.data||[]).map(t=>renderHNTubeCard(t,tus[t.id]||{})).join('')}</div></section>
@@ -2949,14 +3002,17 @@ function renderHNMedCard(m,s={}) {
     const pumpOverride = s.pump_default_value_override ?? '';
     const globalPump = m.pump_default_value ?? '';
     const adminMode = isV17AdminUnitEditing();
-    return `<div class="border border-slate-200 rounded-xl p-4" data-hn-med="${m.id}">
-      <div class="flex items-center justify-between gap-3"><div><div class="font-extrabold text-slate-800">${escapeHtml(m.name)} ${epi?'<span class="text-[10px] bg-red-100 text-red-700 px-2 py-0.5 rounded-full">固定第一</span>':''}</div><div class="text-xs text-slate-400">${escapeHtml(m.generic_name||'')} ${m.has_pump?`｜Pump ${m.pump_min_qty}支以上`:''}</div>${adminMode?`<div class="text-[11px] text-blue-600 mt-1">全院預設：${m.default_qty ?? 1} 支${m.has_pump?`｜Pump ${globalPump===''?'未設定':escapeHtml(globalPump)} ${escapeHtml(m.pump_unit||'')}`:''}</div>`:''}</div><label class="text-sm font-bold"><input id="hn-med-visible-${m.id}" type="checkbox" ${epi||s.is_visible!==false?'checked':''} ${epi?'disabled':''}> 顯示</label></div>
-      <div class="grid grid-cols-2 md:grid-cols-5 gap-2 mt-3">
-        <div><label class="v17-label">預設支數</label><input id="hn-med-qty-${m.id}" type="number" step="0.5" class="v17-input" value="${s.default_qty ?? m.default_qty ?? 1}"></div>
-        <div class="md:col-span-2"><label class="v17-label">快速選擇（逗號分隔）</label><input id="hn-med-quick-${m.id}" class="v17-input" value="${escapeHtml(quick)}" placeholder="1,2,6"></div>
-        <div><label class="v17-label">排序</label><input id="hn-med-sort-${m.id}" type="number" class="v17-input" value="${epi?1:(s.sort_order ?? m.global_sort ?? 100)}" ${epi?'disabled':''}></div>
-        <div><label class="v17-label">Pump單位預設${m.has_pump?'':'（此藥無Pump）'}</label><input id="hn-med-pump-${m.id}" type="number" step="0.1" class="v17-input" value="${pumpOverride}" placeholder="${m.has_pump&&globalPump!==''?`留空＝全院 ${escapeHtml(globalPump)}`:''}" ${m.has_pump?'':'disabled'}></div>
-      </div><div class="mt-3 flex gap-2 flex-wrap"><button onclick="saveHNMedication('${m.id}')" class="px-3 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold">儲存</button>${m.has_pump?`<button onclick="resetUnitPumpDefault('${m.id}')" class="px-3 py-2 bg-slate-100 text-slate-700 border border-slate-300 rounded-lg text-sm font-bold">Pump恢復全院預設</button>`:''}</div></div>`;
+    const sortValue=epi?1:(s.sort_order ?? m.global_sort ?? 100);
+    return `<div class="v17-subcard" data-hn-med="${m.id}">
+      <div class="v17-status-line"><div><div class="flex items-center gap-2 flex-wrap"><span class="v17-sort-badge">${sortValue}</span><div class="font-extrabold text-slate-800">${escapeHtml(m.name)}</div>${epi?'<span class="text-[10px] bg-red-100 text-red-700 px-2 py-1 rounded-full font-bold">固定第一</span>':''}</div><div class="text-xs text-slate-400 mt-1">${escapeHtml(m.generic_name||'')} ${m.has_pump?`｜Pump ${m.pump_min_qty}支以上`:''}</div>${adminMode?`<div class="text-[11px] text-blue-600 mt-1">全院預設：${m.default_qty ?? 1} 支${m.has_pump?`｜Pump ${globalPump===''?'未設定':escapeHtml(globalPump)} ${escapeHtml(m.pump_unit||'')}`:''}</div>`:''}</div>${renderV17Toggle(`hn-med-visible-${m.id}`,epi||s.is_visible!==false,'顯示',epi)}</div>
+      <div class="v17-form-grid mt-3">
+        <div class="v17-field"><label class="v17-label">預設支數</label><input id="hn-med-qty-${m.id}" type="number" step="0.5" class="v17-input" value="${s.default_qty ?? m.default_qty ?? 1}"></div>
+        <div class="v17-field"><label class="v17-label">快速選擇（逗號分隔）</label><input id="hn-med-quick-${m.id}" class="v17-input" value="${escapeHtml(quick)}" placeholder="1,2,6"></div>
+        <div class="v17-field"><label class="v17-label">排序</label><input id="hn-med-sort-${m.id}" type="number" class="v17-input" value="${sortValue}" ${epi?'disabled':''}></div>
+        <div class="v17-field"><label class="v17-label">Pump 單位預設${m.has_pump?'':'（此藥無 Pump）'}</label><input id="hn-med-pump-${m.id}" type="number" step="0.1" class="v17-input" value="${pumpOverride}" placeholder="${m.has_pump&&globalPump!==''?`留空＝全院 ${escapeHtml(globalPump)}`:''}" ${m.has_pump?'':'disabled'}></div>
+      </div>
+      <div class="v17-actions"><button onclick="saveHNMedication('${m.id}')" class="v17-btn v17-btn-primary"><i class="fa-solid fa-floppy-disk"></i>儲存設定</button>${m.has_pump?`<button onclick="resetUnitPumpDefault('${m.id}')" class="v17-btn v17-btn-secondary">Pump 恢復全院預設</button>`:''}</div>
+    </div>`;
 }
 
 async function saveHNMedication(id) {
@@ -2970,7 +3026,7 @@ async function saveHNMedication(id) {
       pump_default_value_override:document.getElementById(`hn-med-pump-${id}`).disabled?null:(Number(document.getElementById(`hn-med-pump-${id}`).value)||null)
     };
     const { error } = await supabaseClient.from('medication_unit_settings').upsert(payload,{onConflict:'unit_id,medication_id'});
-    if(error) return alertV17(`儲存失敗：${error.message}`,true); alertV17('藥物設定已儲存');
+    if(error) return alertV17(`儲存失敗：${error.message}`,true); alertV17(`${document.querySelector(`[data-hn-med="${id}"]`)?.querySelector('.font-extrabold')?.innerText||'藥物'}設定已儲存`);
 }
 
 async function resetUnitPumpDefault(id) {
@@ -2984,7 +3040,8 @@ async function resetUnitPumpDefault(id) {
 
 function renderHNTubeCard(t,s={}) {
     const defs=s.default_values||{}; const fields=Array.isArray(t.field_schema)?t.field_schema:[];
-    return `<div class="border border-slate-200 rounded-xl p-4"><div class="flex justify-between gap-3"><div class="font-extrabold">${escapeHtml(t.name)}</div><label class="text-sm font-bold"><input id="hn-tube-visible-${t.id}" type="checkbox" ${s.is_visible!==false?'checked':''}> 顯示</label></div><div class="grid grid-cols-2 md:grid-cols-4 gap-2 mt-3"><div><label class="v17-label">排序</label><input id="hn-tube-sort-${t.id}" type="number" class="v17-input" value="${s.sort_order ?? t.sort_order ?? 100}"></div>${fields.map(f=>`<div><label class="v17-label">${escapeHtml(f.label||f.key)} 預設</label><input id="hn-tube-def-${t.id}-${escapeHtml(f.key)}" class="v17-input" value="${escapeHtml(defs[f.key] ?? f.default ?? '')}"></div>`).join('')}</div><button onclick="saveHNTube('${t.id}')" class="mt-3 px-3 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold">儲存</button></div>`;
+    const sort=s.sort_order ?? t.sort_order ?? 100;
+    return `<div class="v17-subcard"><div class="v17-status-line"><div class="flex items-center gap-2"><span class="v17-sort-badge">${sort}</span><div class="font-extrabold">${escapeHtml(t.name)}</div></div>${renderV17Toggle(`hn-tube-visible-${t.id}`,s.is_visible!==false,'顯示')}</div><div class="v17-form-grid mt-3"><div class="v17-field"><label class="v17-label">排序</label><input id="hn-tube-sort-${t.id}" type="number" class="v17-input" value="${sort}"></div>${fields.map(f=>`<div class="v17-field"><label class="v17-label">${escapeHtml(f.label||f.key)} 預設</label><input id="hn-tube-def-${t.id}-${escapeHtml(f.key)}" class="v17-input" value="${escapeHtml(defs[f.key] ?? f.default ?? '')}"></div>`).join('')}</div><div class="v17-actions"><button onclick="saveHNTube('${t.id}')" class="v17-btn v17-btn-primary"><i class="fa-solid fa-floppy-disk"></i>儲存設定</button></div></div>`;
 }
 async function saveHNTube(id) {
     const { data:t } = await supabaseClient.from('tube_types').select('*').eq('id',id).single();
@@ -2993,19 +3050,41 @@ async function saveHNTube(id) {
     const payload={unit_id:settingsUnit.id,tube_type_id:id,is_visible:document.getElementById(`hn-tube-visible-${id}`).checked,sort_order:Number(document.getElementById(`hn-tube-sort-${id}`).value)||100,default_values:defs};
     const {error}=await supabaseClient.from('tube_unit_settings').upsert(payload,{onConflict:'unit_id,tube_type_id'}); if(error)return alertV17(`儲存失敗：${error.message}`,true); alertV17('管路設定已儲存');
 }
-function renderHNBloodCard(b,s={}) { return `<div class="border border-slate-200 rounded-xl p-4 grid grid-cols-1 md:grid-cols-4 gap-2 items-end"><div class="font-extrabold">${escapeHtml(b.name)}</div><label class="text-sm font-bold"><input id="hn-blood-visible-${b.id}" type="checkbox" ${s.is_visible!==false?'checked':''}> 顯示</label><div><label class="v17-label">預設 U</label><input id="hn-blood-u-${b.id}" type="number" step="0.5" class="v17-input" value="${s.default_units ?? 2}"></div><div><label class="v17-label">排序</label><div class="flex gap-2"><input id="hn-blood-sort-${b.id}" type="number" class="v17-input" value="${s.sort_order ?? b.sort_order ?? 100}"><button onclick="saveHNBlood('${b.id}')" class="px-3 bg-blue-600 text-white rounded-lg font-bold">儲存</button></div></div></div>`; }
+function renderHNBloodCard(b,s={}) {
+    const sort=s.sort_order ?? b.sort_order ?? 100;
+    return `<div class="v17-subcard"><div class="v17-status-line"><div class="flex items-center gap-2"><span class="v17-sort-badge">${sort}</span><div class="font-extrabold">${escapeHtml(b.name)}</div></div>${renderV17Toggle(`hn-blood-visible-${b.id}`,s.is_visible!==false,'顯示')}</div><div class="v17-form-grid mt-3"><div class="v17-field"><label class="v17-label">預設 U</label><input id="hn-blood-u-${b.id}" type="number" step="0.5" class="v17-input" value="${s.default_units ?? 2}"></div><div class="v17-field"><label class="v17-label">排序</label><input id="hn-blood-sort-${b.id}" type="number" class="v17-input" value="${sort}"></div></div><div class="v17-actions"><button onclick="saveHNBlood('${b.id}')" class="v17-btn v17-btn-primary"><i class="fa-solid fa-floppy-disk"></i>儲存設定</button></div></div>`;
+}
 async function saveHNBlood(id){ const settingsUnit=getV17SettingsUnit(); if(!settingsUnit)return alertV17('找不到目前單位',true); const payload={unit_id:settingsUnit.id,blood_product_id:id,is_visible:document.getElementById(`hn-blood-visible-${id}`).checked,default_units:Number(document.getElementById(`hn-blood-u-${id}`).value)||1,sort_order:Number(document.getElementById(`hn-blood-sort-${id}`).value)||100}; const {error}=await supabaseClient.from('blood_unit_settings').upsert(payload,{onConflict:'unit_id,blood_product_id'}); if(error)return alertV17(`儲存失敗：${error.message}`,true); alertV17('血品設定已儲存'); }
 
-async function changeOwnUnitPassword(){ const settingsUnit=getV17SettingsUnit(); if(!settingsUnit)return alertV17('找不到目前單位',true); const p=document.getElementById('unit-new-password').value,p2=document.getElementById('unit-new-password2').value; if(p.length<8)return alertV17('密碼至少 8 碼',true); if(p!==p2)return alertV17('兩次密碼不一致',true); try{await invokeV17UserAdmin({action:'reset_unit_password',unitId:settingsUnit.id,password:p}); document.getElementById('unit-new-password').value='';document.getElementById('unit-new-password2').value='';alertV17(`${settingsUnit.code} 單位密碼已更新`);}catch(e){alertV17(e.message,true);} }
+async function changeOwnUnitPassword(btn){
+    const settingsUnit=getV17SettingsUnit(); if(!settingsUnit)return alertV17('找不到目前單位',true);
+    const p=document.getElementById('unit-new-password').value,p2=document.getElementById('unit-new-password2').value;
+    if(p.length<8)return alertV17('密碼至少 8 碼',true);
+    if(p!==p2)return alertV17('兩次密碼不一致',true);
+    setV17ButtonBusy(btn,true,'更新中...');
+    try{
+        const result=await invokeV17UserAdmin({action:'reset_unit_password',unitId:settingsUnit.id,password:p});
+        document.getElementById('unit-new-password').value=''; document.getElementById('unit-new-password2').value='';
+        alertV17(`${settingsUnit.code} 單位密碼已更新`);
+        return result;
+    }catch(e){
+        console.error('reset unit password failed',e);
+        alertV17(`密碼更新失敗：${e?.message||String(e)}`,true);
+    }finally{ setV17ButtonBusy(btn,false); }
+}
 
-function alertV17(msg,error=false){ desktopFlashLiveBadge(error?'操作失敗':'已儲存',error); const el=document.getElementById('desktop-last-sync'); if(el)el.innerText=msg; }
+function alertV17(msg,error=false){
+    desktopFlashLiveBadge(error?'操作失敗':'已儲存',error);
+    const el=document.getElementById('desktop-last-sync'); if(el)el.innerText=msg;
+    showV17Toast(msg,error);
+}
 function renderAuditList(list){ if(!list.length)return '<div class="text-sm text-slate-400 py-4">尚無設定紀錄</div>'; return `<div class="space-y-2">${list.map(x=>`<div class="text-sm border-b border-slate-100 pb-2"><b>${escapeHtml(x.actor_username||'系統')}</b>｜${escapeHtml(x.action)}<div class="text-xs text-slate-400">${formatDesktopDate(x.created_at)}</div></div>`).join('')}</div>`; }
 
 function switchAdminSection(section){
     if(desktopProfile?.role!=='admin') return;
     v17AdminSection=section;
     const root=adminRoot();
-    if(!root){ console.error('V17.4 admin-section-content not found'); return; }
+    if(!root){ console.error('V17.5 admin-section-content not found'); return; }
     document.querySelectorAll('.admin-section-btn').forEach(b=>{
         const active=b.dataset.adminSection===section;
         b.className=`admin-section-btn px-4 py-2 rounded-lg font-bold text-sm ${active?'bg-blue-600 text-white':'bg-slate-100 text-slate-700'}`;
@@ -3020,11 +3099,11 @@ function switchAdminSection(section){
         else if(section==='audit') task=loadAdminAudit();
         else task=loadAdminUnits();
         Promise.resolve(task).catch(err=>{
-            console.error('V17.4 admin load error',err);
+            console.error('V17.5 admin load error',err);
             root.innerHTML=`<div class="bg-red-50 border border-red-200 text-red-700 p-4 rounded-xl font-bold">管理者後台讀取失敗：${escapeHtml(err?.message||String(err))}</div>`;
         });
     } catch(err) {
-        console.error('V17.4 admin switch error',err);
+        console.error('V17.5 admin switch error',err);
         root.innerHTML=`<div class="bg-red-50 border border-red-200 text-red-700 p-4 rounded-xl font-bold">管理者後台讀取失敗：${escapeHtml(err?.message||String(err))}</div>`;
     }
 }
@@ -3036,8 +3115,8 @@ async function loadAdminUnits(){
     const {data,error}=await supabaseClient.from('units').select('*').order('sort_order').order('code');
     if(error)return root.innerHTML=`<div class="text-red-600">${escapeHtml(error.message)}</div>`;
     v17UnitsCache=data||[];
-    root.innerHTML=`<section class="v17-card p-5"><h2 class="font-extrabold text-lg mb-3">新增使用單位</h2><div class="grid grid-cols-1 md:grid-cols-4 gap-3"><div><label class="v17-label">單位代碼 / 帳號</label><input id="admin-unit-code" class="v17-input uppercase" placeholder="例如：8A"></div><div><label class="v17-label">單位名稱</label><input id="admin-unit-name" class="v17-input" placeholder="例如：8A病房"></div><div><label class="v17-label">初始密碼</label><div class="relative"><input id="admin-unit-password" type="password" class="v17-input pr-12" placeholder="至少8碼"><button onclick="togglePasswordVisibility('admin-unit-password','admin-unit-password-eye')" class="absolute right-1 top-1 bottom-1 w-10 text-slate-500"><i id="admin-unit-password-eye" class="fa-solid fa-eye-slash"></i></button></div></div><div class="flex items-end"><button onclick="adminCreateUnit()" class="w-full py-2.5 bg-blue-600 text-white rounded-lg font-bold">新增單位</button></div></div><p class="text-xs text-slate-400 mt-2">帳號建立後固定為單位代碼；護理長只能改密碼。管理者可進入任一單位查看與修改單位層設定。</p></section>
-    <section class="v17-card p-5"><h2 class="font-extrabold text-lg mb-3">目前單位</h2><div class="space-y-2">${(data||[]).map(u=>`<div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 border border-slate-200 rounded-xl p-3"><div><b>${escapeHtml(u.code)}</b><span class="text-slate-500 ml-2">${escapeHtml(u.name)}</span><div class="text-xs text-slate-400 mt-1">登入帳號固定：${escapeHtml(u.code)}</div></div><div class="flex gap-2 flex-wrap"><button onclick="adminOpenUnitSettings('${u.id}')" class="px-3 py-1.5 rounded-lg text-sm font-bold bg-blue-600 text-white"><i class="fa-solid fa-sliders mr-1"></i>查看 / 設定</button><button onclick="adminToggleUnit('${u.id}',${!u.is_active})" class="px-3 py-1.5 rounded-lg text-sm font-bold ${u.is_active?'bg-emerald-100 text-emerald-700':'bg-slate-200 text-slate-600'}">${u.is_active?'啟用中':'已停用'}</button></div></div>`).join('')}</div></section>`;
+    root.innerHTML=`<section class="v17-card p-5"><h2 class="font-extrabold text-lg mb-3">新增使用單位</h2><div class="v17-form-grid"><div class="v17-field"><label class="v17-label">單位代碼 / 帳號</label><input id="admin-unit-code" class="v17-input uppercase" placeholder="例如：8A"></div><div class="v17-field"><label class="v17-label">單位名稱</label><input id="admin-unit-name" class="v17-input" placeholder="例如：8A病房"></div><div class="v17-field"><label class="v17-label">初始密碼</label><div class="relative"><input id="admin-unit-password" type="password" class="v17-input pr-12" placeholder="至少8碼"><button onclick="togglePasswordVisibility('admin-unit-password','admin-unit-password-eye')" class="absolute right-1 top-1 bottom-1 w-10 text-slate-500"><i id="admin-unit-password-eye" class="fa-solid fa-eye-slash"></i></button></div></div><div class="v17-field"><button onclick="adminCreateUnit()" class="v17-btn v17-btn-primary w-full"><i class="fa-solid fa-plus"></i>新增單位</button></div></div><p class="v17-section-note">帳號建立後固定為單位代碼；護理長只能改密碼。管理者可進入任一單位查看與修改單位層設定。</p></section>
+    <section class="v17-card p-5"><h2 class="font-extrabold text-lg mb-3">目前單位</h2><div class="space-y-2">${(data||[]).map(u=>`<div class="v17-subcard v17-status-line"><div><b>${escapeHtml(u.code)}</b><span class="text-slate-500 ml-2">${escapeHtml(u.name)}</span><div class="text-xs text-slate-400 mt-1">登入帳號固定：${escapeHtml(u.code)}</div></div><div class="flex items-center gap-3 flex-wrap"><button onclick="adminOpenUnitSettings('${u.id}')" class="v17-btn v17-btn-primary"><i class="fa-solid fa-sliders"></i>查看 / 設定</button>${renderV17Toggle(`admin-unit-active-${u.id}`,u.is_active,'啟用',false,`onchange="adminToggleUnit('${u.id}',this.checked)"`)}</div></div>`).join('')}</div></section>`;
 }
 
 function adminOpenUnitSettings(unitId){
@@ -3061,21 +3140,81 @@ async function loadAdminHeadNurses(){const root=adminRoot();root.innerHTML='<div
 async function adminSetHNApproval(userId,status){const{error}=await supabaseClient.from('profiles').update({approval:status,updated_at:new Date().toISOString()}).eq('user_id',userId).eq('role','head_nurse');if(error)return alertV17(error.message,true);alertV17('權限已更新');loadAdminHeadNurses();}
 function adminDeleteHeadNurse(userId){showActionToast({title:'刪除護理長帳號',message:'確定要刪除這個護理長帳號嗎？刪除後需重新申請才能使用。',leftText:'取消',rightText:'確認刪除',danger:true,rightAction:async()=>{try{await invokeV17UserAdmin({action:'delete_head_nurse',userId});alertV17('帳號已刪除');loadAdminHeadNurses();}catch(e){alertV17(e.message,true);}}});}
 
-async function loadAdminMedications(){const root=adminRoot();root.innerHTML='<div class="text-center text-slate-400 py-10">讀取中...</div>';const [mr,sr,vr,msr,mvr]=await Promise.all([supabaseClient.from('medications').select('*').order('global_sort'),supabaseClient.from('mix_solutions').select('*').order('sort_order'),supabaseClient.from('mix_volumes').select('*').order('sort_order'),supabaseClient.from('medication_mix_solutions').select('*'),supabaseClient.from('medication_mix_volumes').select('*')]);if(mr.error)return root.innerHTML=`<div class="text-red-600">${escapeHtml(mr.error.message)}</div>`;v17MixSolutions=sr.data||[];v17MixVolumes=vr.data||[];v17AdminMedAssociations.solutions={};(msr.data||[]).forEach(x=>(v17AdminMedAssociations.solutions[x.medication_id]??=[]).push(x.solution_id));v17AdminMedAssociations.volumes={};(mvr.data||[]).forEach(x=>(v17AdminMedAssociations.volumes[x.medication_id]??=[]).push(x.volume_id));root.innerHTML=`<section class="v17-card p-5"><h2 class="font-extrabold text-lg mb-3">泡製選項</h2><div class="grid grid-cols-1 md:grid-cols-2 gap-5"><div><div class="font-bold mb-2">泡製溶液</div><div class="flex gap-2"><input id="admin-new-solution" class="v17-input" placeholder="例如：N/S"><button onclick="adminAddSolution()" class="px-3 bg-blue-600 text-white rounded-lg font-bold">新增</button></div><div class="text-sm text-slate-500 mt-2">${v17MixSolutions.map(x=>escapeHtml(x.name)).join('、')||'尚無'}</div></div><div><div class="font-bold mb-2">容量 (mL)</div><div class="flex gap-2"><input id="admin-new-volume" type="number" class="v17-input" placeholder="例如：250"><button onclick="adminAddVolume()" class="px-3 bg-blue-600 text-white rounded-lg font-bold">新增</button></div><div class="text-sm text-slate-500 mt-2">${v17MixVolumes.map(x=>escapeHtml(x.volume_ml)).join('、')||'尚無'}</div></div></div></section><section class="v17-card p-5"><h2 class="font-extrabold text-lg mb-3">新增藥物</h2>${adminMedicationEditor(null)}</section><section class="v17-card p-5"><h2 class="font-extrabold text-lg mb-3">藥物主檔</h2><div class="space-y-3">${(mr.data||[]).map(m=>`<details class="border border-slate-200 rounded-xl"><summary class="cursor-pointer p-4 font-extrabold">${escapeHtml(m.name)} ${m.system_key==='epinephrine'?'<span class="text-xs text-red-600">（Adrenalin固定第一）</span>':''}</summary><div class="p-4 pt-0">${adminMedicationEditor(m)}</div></details>`).join('')}</div></section>`;}
-function adminMedicationEditor(m){const id=m?.id||'new',assocS=v17AdminMedAssociations.solutions[m?.id]||[],assocV=v17AdminMedAssociations.volumes[m?.id]||[];return `<div id="admin-med-${id}" class="grid grid-cols-2 md:grid-cols-4 gap-3"><div><label class="v17-label">藥物名稱</label><input data-f="name" class="v17-input" value="${escapeHtml(m?.name||'')}" ${m?.system_key==='epinephrine'?'disabled':''}></div><div><label class="v17-label">學名</label><input data-f="generic_name" class="v17-input" value="${escapeHtml(m?.generic_name||'')}"></div><div><label class="v17-label">每支含量</label><input data-f="amount_value" type="number" step="0.1" class="v17-input" value="${m?.amount_value??''}"></div><div><label class="v17-label">含量單位</label><input data-f="amount_unit" class="v17-input" value="${escapeHtml(m?.amount_unit||'mg')}"></div><div><label class="v17-label">每支容量 mL</label><input data-f="volume_ml" type="number" step="0.1" class="v17-input" value="${m?.volume_ml??''}"></div><div><label class="v17-label">全院預設支數</label><input data-f="default_qty" type="number" step="0.5" class="v17-input" value="${m?.default_qty??1}"></div><div><label class="v17-label">排序</label><input data-f="global_sort" type="number" class="v17-input" value="${m?.global_sort??100}" ${m?.system_key==='epinephrine'?'disabled':''}></div><div class="flex items-end"><label class="font-bold text-sm"><input data-f="is_active" type="checkbox" ${m?.is_active!==false?'checked':''} ${m?.system_key==='epinephrine'?'disabled':''}> 啟用</label></div><div class="flex items-end"><label class="font-bold text-sm"><input data-f="has_pump" type="checkbox" ${m?.has_pump?'checked':''}> 有 Pump</label></div><div><label class="v17-label">幾支以上出現 Pump</label><input data-f="pump_min_qty" type="number" step="0.5" class="v17-input" value="${m?.pump_min_qty??1}"></div><div><label class="v17-label">Pump 全院預設</label><input data-f="pump_default_value" type="number" step="0.1" class="v17-input" value="${m?.pump_default_value??''}"></div><div><label class="v17-label">Pump 單位</label><input data-f="pump_unit" class="v17-input" value="${escapeHtml(m?.pump_unit||'滴/分')}"></div><div class="col-span-2"><label class="v17-label">允許泡製溶液</label><div class="flex flex-wrap gap-2">${v17MixSolutions.map(s=>`<label class="text-sm"><input data-sol="${s.id}" type="checkbox" ${assocS.includes(s.id)?'checked':''}> ${escapeHtml(s.name)}</label>`).join('')}</div></div><div class="col-span-2"><label class="v17-label">允許容量</label><div class="flex flex-wrap gap-2">${v17MixVolumes.map(v=>`<label class="text-sm"><input data-vol="${v.id}" type="checkbox" ${assocV.includes(v.id)?'checked':''}> ${escapeHtml(v.volume_ml)}mL</label>`).join('')}</div></div><div class="col-span-2 md:col-span-4"><button onclick="saveAdminMedication('${id}')" class="px-4 py-2.5 bg-blue-600 text-white rounded-lg font-bold">${m?'儲存藥物':'新增藥物'}</button></div></div>`;}
-async function saveAdminMedication(id){const root=document.getElementById(`admin-med-${id}`),get=f=>root.querySelector(`[data-f="${f}"]`);const payload={name:get('name').value.trim(),generic_name:get('generic_name').value.trim()||null,amount_value:Number(get('amount_value').value)||null,amount_unit:get('amount_unit').value.trim()||'mg',volume_ml:Number(get('volume_ml').value)||null,default_qty:Number(get('default_qty').value)||1,has_pump:get('has_pump').checked,pump_min_qty:Number(get('pump_min_qty').value)||1,pump_default_value:Number(get('pump_default_value').value)||null,pump_unit:get('pump_unit').value.trim()||'滴/分',is_active:get('is_active').checked,global_sort:Number(get('global_sort').value)||100,updated_at:new Date().toISOString()};if(!payload.name)return alertV17('藥物名稱必填',true);let medId=id;if(id==='new'){const{data,error}=await supabaseClient.from('medications').insert(payload).select().single();if(error)return alertV17(error.message,true);medId=data.id;}else{const{error}=await supabaseClient.from('medications').update(payload).eq('id',id);if(error)return alertV17(error.message,true);}const sols=[...root.querySelectorAll('[data-sol]:checked')].map(x=>x.dataset.sol),vols=[...root.querySelectorAll('[data-vol]:checked')].map(x=>x.dataset.vol);await supabaseClient.from('medication_mix_solutions').delete().eq('medication_id',medId);await supabaseClient.from('medication_mix_volumes').delete().eq('medication_id',medId);if(sols.length)await supabaseClient.from('medication_mix_solutions').insert(sols.map(solution_id=>({medication_id:medId,solution_id})));if(vols.length)await supabaseClient.from('medication_mix_volumes').insert(vols.map(volume_id=>({medication_id:medId,volume_id})));alertV17('藥物已儲存');loadAdminMedications();}
+async function loadAdminMedications(){
+    const root=adminRoot(); root.innerHTML='<div class="text-center text-slate-400 py-10">讀取中...</div>';
+    const [mr,sr,vr,msr,mvr]=await Promise.all([
+        supabaseClient.from('medications').select('*').order('global_sort').order('name'),
+        supabaseClient.from('mix_solutions').select('*').order('sort_order'),
+        supabaseClient.from('mix_volumes').select('*').order('sort_order'),
+        supabaseClient.from('medication_mix_solutions').select('*'),
+        supabaseClient.from('medication_mix_volumes').select('*')
+    ]);
+    if(mr.error)return root.innerHTML=`<div class="text-red-600">${escapeHtml(mr.error.message)}</div>`;
+    const meds=mr.data||[]; v17NextMedicationSort=(meds.reduce((m,x)=>Math.max(m,Number(x.global_sort)||0),0)||0)+1;
+    v17MixSolutions=sr.data||[]; v17MixVolumes=vr.data||[];
+    v17AdminMedAssociations.solutions={}; (msr.data||[]).forEach(x=>(v17AdminMedAssociations.solutions[x.medication_id]??=[]).push(x.solution_id));
+    v17AdminMedAssociations.volumes={}; (mvr.data||[]).forEach(x=>(v17AdminMedAssociations.volumes[x.medication_id]??=[]).push(x.volume_id));
+    root.innerHTML=`<section class="v17-card p-5"><h2 class="font-extrabold text-lg mb-3">泡製選項</h2><div class="v17-form-grid v17-grid-2"><div class="v17-field"><label class="v17-label">泡製溶液</label><div class="flex gap-2"><input id="admin-new-solution" class="v17-input" placeholder="例如：N/S"><button onclick="adminAddSolution()" class="v17-btn v17-btn-primary"><i class="fa-solid fa-plus"></i>新增</button></div><div class="v17-option-row mt-2">${v17MixSolutions.map(x=>`<span class="v17-check">${escapeHtml(x.name)}</span>`).join('')||'<span class="text-sm text-slate-400">尚無</span>'}</div></div><div class="v17-field"><label class="v17-label">容量 (mL)</label><div class="flex gap-2"><input id="admin-new-volume" type="number" class="v17-input" placeholder="例如：250"><button onclick="adminAddVolume()" class="v17-btn v17-btn-primary"><i class="fa-solid fa-plus"></i>新增</button></div><div class="v17-option-row mt-2">${v17MixVolumes.map(x=>`<span class="v17-check">${escapeHtml(x.volume_ml)} mL</span>`).join('')||'<span class="text-sm text-slate-400">尚無</span>'}</div></div></div></section><section class="v17-card p-5"><div class="v17-status-line"><div><h2 class="font-extrabold text-lg">新增藥物</h2><p class="v17-section-note">排序已自動帶入目前下一順位：${v17NextMedicationSort}</p></div></div>${adminMedicationEditor(null)}</section><section class="v17-card p-5"><h2 class="font-extrabold text-lg mb-3">藥物主檔</h2><div class="space-y-3">${meds.map(m=>`<details class="border border-slate-200 rounded-xl overflow-hidden"><summary class="cursor-pointer p-4 font-extrabold flex items-center gap-2"><span class="v17-sort-badge">${m.global_sort??100}</span><span>${escapeHtml(m.name)}</span>${m.system_key==='epinephrine'?'<span class="text-xs text-red-600">Adrenalin 固定第一</span>':''}</summary><div class="p-4 pt-0">${adminMedicationEditor(m)}</div></details>`).join('')}</div></section>`;
+}
+
+function adminMedicationEditor(m){
+    const id=m?.id||'new', assocS=v17AdminMedAssociations.solutions[m?.id]||[], assocV=v17AdminMedAssociations.volumes[m?.id]||[];
+    const sortValue=m?.global_sort??v17NextMedicationSort;
+    const hasPump=!!m?.has_pump;
+    const hasMix=assocS.length>0||assocV.length>0;
+    return `<div id="admin-med-${id}">
+      <div class="v17-editor-section"><div class="v17-editor-title"><i class="fa-solid fa-capsules text-blue-500"></i>基本資料</div><div class="v17-form-grid"><div class="v17-field"><label class="v17-label">藥物名稱</label><input data-f="name" class="v17-input" value="${escapeHtml(m?.name||'')}" ${m?.system_key==='epinephrine'?'disabled':''}></div><div class="v17-field"><label class="v17-label">學名</label><input data-f="generic_name" class="v17-input" value="${escapeHtml(m?.generic_name||'')}"></div><div class="v17-field"><label class="v17-label">每支含量</label><input data-f="amount_value" type="number" step="0.1" class="v17-input" value="${m?.amount_value??''}"></div><div class="v17-field"><label class="v17-label">含量單位</label><input data-f="amount_unit" class="v17-input" value="${escapeHtml(m?.amount_unit||'mg')}"></div><div class="v17-field"><label class="v17-label">每支容量 mL</label><input data-f="volume_ml" type="number" step="0.1" class="v17-input" value="${m?.volume_ml??''}"></div><div class="v17-field"><label class="v17-label">全院預設支數</label><input data-f="default_qty" type="number" step="0.5" class="v17-input" value="${m?.default_qty??1}"></div><div class="v17-field"><label class="v17-label">排序</label><input data-f="global_sort" type="number" class="v17-input" value="${sortValue}" ${m?.system_key==='epinephrine'?'disabled':''}></div></div></div>
+      <div class="v17-editor-section"><div class="v17-editor-title"><i class="fa-solid fa-toggle-on text-emerald-500"></i>使用設定</div><div class="v17-option-row">${renderV17Toggle(`admin-med-active-${id}`,m?.is_active!==false,'啟用此藥物',m?.system_key==='epinephrine','data-f="is_active"')}${renderV17Toggle(`admin-med-pump-${id}`,hasPump,'使用 Pump',false,`data-f="has_pump" onchange="toggleAdminMedPumpFields('${id}')"`)}${renderV17Toggle(`admin-med-mix-${id}`,hasMix,'需要泡製',false,`data-f="has_mix_ui" onchange="toggleAdminMedMixFields('${id}')"`)}</div></div>
+      <div class="v17-editor-section ${hasPump?'':'v17-muted-block'}" data-pump-block><div class="v17-editor-title"><i class="fa-solid fa-pump-medical text-indigo-500"></i>Pump 設定</div><div class="v17-form-grid"><div class="v17-field"><label class="v17-label">幾支以上出現 Pump</label><input data-f="pump_min_qty" data-pump-field type="number" step="0.5" class="v17-input" value="${m?.pump_min_qty??1}" ${hasPump?'':'disabled'}></div><div class="v17-field"><label class="v17-label">Pump 全院預設</label><input data-f="pump_default_value" data-pump-field type="number" step="0.1" class="v17-input" value="${m?.pump_default_value??''}" ${hasPump?'':'disabled'}></div><div class="v17-field"><label class="v17-label">Pump 單位</label><input data-f="pump_unit" data-pump-field class="v17-input" value="${escapeHtml(m?.pump_unit||'滴/分')}" ${hasPump?'':'disabled'}></div></div></div>
+      <div class="v17-editor-section ${hasMix?'':'v17-muted-block'}" data-mix-block><div class="v17-editor-title"><i class="fa-solid fa-flask text-purple-500"></i>泡製設定</div><div class="v17-form-grid v17-grid-2"><div><label class="v17-label">允許泡製溶液</label><div class="v17-option-row">${v17MixSolutions.map(s=>`<label class="v17-check"><input data-sol="${s.id}" type="checkbox" ${assocS.includes(s.id)?'checked':''} ${hasMix?'':'disabled'}><span>${escapeHtml(s.name)}</span></label>`).join('')||'<span class="text-sm text-slate-400">尚未建立泡製溶液</span>'}</div></div><div><label class="v17-label">允許容量</label><div class="v17-option-row">${v17MixVolumes.map(v=>`<label class="v17-check"><input data-vol="${v.id}" type="checkbox" ${assocV.includes(v.id)?'checked':''} ${hasMix?'':'disabled'}><span>${escapeHtml(v.volume_ml)} mL</span></label>`).join('')||'<span class="text-sm text-slate-400">尚未建立容量</span>'}</div></div></div></div>
+      <div class="v17-actions"><button onclick="saveAdminMedication('${id}',this)" class="v17-btn v17-btn-primary"><i class="fa-solid fa-floppy-disk"></i>${m?'儲存設定':'新增藥物'}</button></div>
+    </div>`;
+}
+
+async function saveAdminMedication(id,btn){
+    const root=document.getElementById(`admin-med-${id}`), get=f=>root.querySelector(`[data-f="${f}"]`);
+    const hasPump=get('has_pump').checked;
+    const payload={name:get('name').value.trim(),generic_name:get('generic_name').value.trim()||null,amount_value:Number(get('amount_value').value)||null,amount_unit:get('amount_unit').value.trim()||'mg',volume_ml:Number(get('volume_ml').value)||null,default_qty:Number(get('default_qty').value)||1,has_pump:hasPump,pump_min_qty:hasPump?(Number(get('pump_min_qty').value)||1):1,pump_default_value:hasPump?(Number(get('pump_default_value').value)||null):null,pump_unit:hasPump?(get('pump_unit').value.trim()||'滴/分'):'滴/分',is_active:get('is_active').checked,global_sort:Number(get('global_sort').value)||v17NextMedicationSort,updated_at:new Date().toISOString()};
+    if(!payload.name)return alertV17('藥物名稱必填',true);
+    setV17ButtonBusy(btn,true,'儲存中...');
+    try{
+      let medId=id;
+      if(id==='new'){const{data,error}=await supabaseClient.from('medications').insert(payload).select().single();if(error)throw error;medId=data.id;}
+      else{const{error}=await supabaseClient.from('medications').update(payload).eq('id',id);if(error)throw error;}
+      const mixEnabled=get('has_mix_ui')?.checked;
+      const sols=mixEnabled?[...root.querySelectorAll('[data-sol]:checked')].map(x=>x.dataset.sol):[];
+      const vols=mixEnabled?[...root.querySelectorAll('[data-vol]:checked')].map(x=>x.dataset.vol):[];
+      await supabaseClient.from('medication_mix_solutions').delete().eq('medication_id',medId);
+      await supabaseClient.from('medication_mix_volumes').delete().eq('medication_id',medId);
+      if(sols.length){const{error}=await supabaseClient.from('medication_mix_solutions').insert(sols.map(solution_id=>({medication_id:medId,solution_id})));if(error)throw error;}
+      if(vols.length){const{error}=await supabaseClient.from('medication_mix_volumes').insert(vols.map(volume_id=>({medication_id:medId,volume_id})));if(error)throw error;}
+      alertV17(id==='new'?`藥物 ${payload.name} 已新增`:`${payload.name} 設定已儲存`);
+      await loadAdminMedications();
+    }catch(e){alertV17(`儲存失敗：${e?.message||String(e)}`,true);}finally{setV17ButtonBusy(btn,false);}
+}
+
 async function adminAddSolution(){const name=document.getElementById('admin-new-solution').value.trim();if(!name)return;const{error}=await supabaseClient.from('mix_solutions').insert({name,sort_order:v17MixSolutions.length+1});if(error)return alertV17(error.message,true);loadAdminMedications();}
 async function adminAddVolume(){const v=Number(document.getElementById('admin-new-volume').value);if(!v)return;const{error}=await supabaseClient.from('mix_volumes').insert({volume_ml:v,sort_order:v17MixVolumes.length+1});if(error)return alertV17(error.message,true);loadAdminMedications();}
 
-async function loadAdminRhythms(){const root=adminRoot();const[rr,sr]=await Promise.all([supabaseClient.from('rhythms').select('*').order('sort_order'),supabaseClient.from('shock_energies').select('*').order('sort_order')]);root.innerHTML=`<section class="v17-card p-5"><h2 class="font-extrabold text-lg mb-3">新增心律</h2><div class="flex gap-2 flex-wrap"><input id="admin-rhythm-name" class="v17-input max-w-xs" placeholder="心律名稱"><input id="admin-rhythm-sort" type="number" class="v17-input w-28" placeholder="排序"><label class="flex items-center gap-1 font-bold text-sm"><input id="admin-rhythm-shock" type="checkbox"> 啟動電擊</label><button onclick="adminAddRhythm()" class="px-4 bg-blue-600 text-white rounded-lg font-bold">新增</button></div></section><section class="v17-card p-5"><h2 class="font-extrabold text-lg mb-3">心律</h2><div class="space-y-2">${(rr.data||[]).map(r=>`<div class="grid grid-cols-1 md:grid-cols-5 gap-2 items-center border rounded-xl p-3"><input id="rh-name-${r.id}" class="v17-input" value="${escapeHtml(r.name)}"><input id="rh-sort-${r.id}" type="number" class="v17-input" value="${r.sort_order}"><label class="font-bold text-sm"><input id="rh-shock-${r.id}" type="checkbox" ${r.is_shockable?'checked':''}> 電擊</label><label class="font-bold text-sm"><input id="rh-active-${r.id}" type="checkbox" ${r.is_active?'checked':''}> 啟用</label><button onclick="adminSaveRhythm('${r.id}')" class="px-3 py-2 bg-blue-600 text-white rounded-lg font-bold">儲存</button></div>`).join('')}</div></section><section class="v17-card p-5"><h2 class="font-extrabold text-lg mb-3">電擊焦耳</h2><div class="flex gap-2 mb-3"><input id="admin-shock-j" type="number" class="v17-input max-w-xs" placeholder="例如：200"><button onclick="adminAddShock()" class="px-4 bg-red-600 text-white rounded-lg font-bold">新增</button></div><div class="flex flex-wrap gap-2">${(sr.data||[]).map(s=>`<span class="px-3 py-2 rounded-lg bg-red-50 text-red-700 font-bold">${s.joules}J</span>`).join('')}</div></section>`;}
-async function adminAddRhythm(){const name=document.getElementById('admin-rhythm-name').value.trim();if(!name)return;const{error}=await supabaseClient.from('rhythms').insert({name,is_shockable:document.getElementById('admin-rhythm-shock').checked,sort_order:Number(document.getElementById('admin-rhythm-sort').value)||100});if(error)return alertV17(error.message,true);loadAdminRhythms();}
+async function loadAdminRhythms(){
+    const root=adminRoot(); const[rr,sr]=await Promise.all([supabaseClient.from('rhythms').select('*').order('sort_order').order('name'),supabaseClient.from('shock_energies').select('*').order('sort_order')]);
+    const rhythms=rr.data||[]; v17NextRhythmSort=(rhythms.reduce((m,x)=>Math.max(m,Number(x.sort_order)||0),0)||0)+1;
+    root.innerHTML=`<section class="v17-card p-5"><h2 class="font-extrabold text-lg mb-3">新增心律</h2><div class="v17-form-grid"><div class="v17-field"><label class="v17-label">心律名稱</label><input id="admin-rhythm-name" class="v17-input" placeholder="例如：AF"></div><div class="v17-field"><label class="v17-label">排序</label><input id="admin-rhythm-sort" type="number" class="v17-input" value="${v17NextRhythmSort}"></div><div class="v17-field">${renderV17Toggle('admin-rhythm-shock',false,'啟動電擊')}</div><div class="v17-field"><button onclick="adminAddRhythm()" class="v17-btn v17-btn-primary w-full"><i class="fa-solid fa-plus"></i>新增心律</button></div></div></section><section class="v17-card p-5"><h2 class="font-extrabold text-lg mb-3">心律</h2><div class="space-y-2">${rhythms.map(r=>`<div class="v17-subcard"><div class="v17-form-grid"><div class="v17-field"><label class="v17-label">名稱</label><input id="rh-name-${r.id}" class="v17-input" value="${escapeHtml(r.name)}"></div><div class="v17-field"><label class="v17-label">排序</label><input id="rh-sort-${r.id}" type="number" class="v17-input" value="${r.sort_order}"></div><div class="v17-field">${renderV17Toggle(`rh-shock-${r.id}`,r.is_shockable,'啟動電擊')}</div><div class="v17-field">${renderV17Toggle(`rh-active-${r.id}`,r.is_active,'啟用')}</div></div><div class="v17-actions"><button onclick="adminSaveRhythm('${r.id}')" class="v17-btn v17-btn-primary"><i class="fa-solid fa-floppy-disk"></i>儲存設定</button></div></div>`).join('')}</div></section><section class="v17-card p-5"><h2 class="font-extrabold text-lg mb-3">電擊焦耳</h2><div class="flex gap-2 flex-wrap items-end"><div class="v17-field flex-1 min-w-[180px]"><label class="v17-label">新增焦耳</label><input id="admin-shock-j" type="number" class="v17-input" placeholder="例如：200"></div><button onclick="adminAddShock()" class="v17-btn v17-btn-danger"><i class="fa-solid fa-plus"></i>新增焦耳</button></div><div class="v17-option-row mt-3">${(sr.data||[]).map(s=>`<span class="v17-check text-red-700 bg-red-50">${s.joules} J</span>`).join('')}</div></section>`;
+}
+async function adminAddRhythm(){const name=document.getElementById('admin-rhythm-name').value.trim();if(!name)return alertV17('請輸入心律名稱',true);const{error}=await supabaseClient.from('rhythms').insert({name,is_shockable:document.getElementById('admin-rhythm-shock').checked,sort_order:Number(document.getElementById('admin-rhythm-sort').value)||v17NextRhythmSort});if(error)return alertV17(error.message,true);alertV17(`${name} 已新增`);loadAdminRhythms();}
 async function adminSaveRhythm(id){const{error}=await supabaseClient.from('rhythms').update({name:document.getElementById(`rh-name-${id}`).value.trim(),sort_order:Number(document.getElementById(`rh-sort-${id}`).value)||100,is_shockable:document.getElementById(`rh-shock-${id}`).checked,is_active:document.getElementById(`rh-active-${id}`).checked}).eq('id',id);if(error)return alertV17(error.message,true);alertV17('心律已儲存');}
-async function adminAddShock(){const j=Number(document.getElementById('admin-shock-j').value);if(!j)return;const{error}=await supabaseClient.from('shock_energies').insert({joules:j,sort_order:j});if(error)return alertV17(error.message,true);loadAdminRhythms();}
+async function adminAddShock(){const j=Number(document.getElementById('admin-shock-j').value);if(!j)return alertV17('請輸入焦耳',true);const{error}=await supabaseClient.from('shock_energies').insert({joules:j,sort_order:j});if(error)return alertV17(error.message,true);alertV17(`${j}J 已新增`);loadAdminRhythms();}
 
-async function loadAdminTubesBlood(){const root=adminRoot();const[tr,br]=await Promise.all([supabaseClient.from('tube_types').select('*').order('sort_order'),supabaseClient.from('blood_products').select('*').order('sort_order')]);root.innerHTML=`<section class="v17-card p-5"><h2 class="font-extrabold text-lg mb-3">新增管路類別</h2><div class="grid grid-cols-1 md:grid-cols-4 gap-2"><input id="admin-tube-code" class="v17-input" placeholder="代碼，例如 aline"><input id="admin-tube-name" class="v17-input" placeholder="顯示名稱，例如 A-line"><input id="admin-tube-sort" type="number" class="v17-input" placeholder="排序"><button onclick="adminAddTube()" class="bg-blue-600 text-white rounded-lg font-bold">新增</button></div><p class="text-xs text-slate-400 mt-2">新類別若沒有額外欄位，也可直接紀錄；既有欄位結構可在下方進階欄位 JSON 編輯。</p></section><section class="v17-card p-5"><h2 class="font-extrabold text-lg mb-3">管路主檔</h2><div class="space-y-3">${(tr.data||[]).map(t=>`<details class="border rounded-xl"><summary class="p-3 cursor-pointer font-extrabold">${escapeHtml(t.name)}</summary><div class="p-3 pt-0 grid grid-cols-1 md:grid-cols-4 gap-2"><input id="tube-name-${t.id}" class="v17-input" value="${escapeHtml(t.name)}"><input id="tube-sort-${t.id}" type="number" class="v17-input" value="${t.sort_order}"><label class="font-bold text-sm"><input id="tube-active-${t.id}" type="checkbox" ${t.is_active?'checked':''}> 啟用</label><button onclick="adminSaveTube('${t.id}')" class="bg-blue-600 text-white rounded-lg font-bold">儲存</button><div class="md:col-span-4"><label class="v17-label">進階欄位 JSON</label><textarea id="tube-schema-${t.id}" class="v17-input font-mono text-xs h-28">${escapeHtml(JSON.stringify(t.field_schema||[],null,2))}</textarea></div></div></details>`).join('')}</div></section><section class="v17-card p-5"><h2 class="font-extrabold text-lg mb-3">新增血品</h2><div class="grid grid-cols-1 md:grid-cols-4 gap-2"><input id="admin-blood-code" class="v17-input" placeholder="代碼"><input id="admin-blood-name" class="v17-input" placeholder="名稱"><input id="admin-blood-sort" type="number" class="v17-input" placeholder="排序"><button onclick="adminAddBlood()" class="bg-red-600 text-white rounded-lg font-bold">新增</button></div><div class="mt-4 space-y-2">${(br.data||[]).map(b=>`<div class="grid grid-cols-1 md:grid-cols-4 gap-2"><input id="blood-name-${b.id}" class="v17-input" value="${escapeHtml(b.name)}"><input id="blood-sort-${b.id}" type="number" class="v17-input" value="${b.sort_order}"><label class="font-bold text-sm"><input id="blood-active-${b.id}" type="checkbox" ${b.is_active?'checked':''}> 啟用</label><button onclick="adminSaveBlood('${b.id}')" class="bg-blue-600 text-white rounded-lg font-bold">儲存</button></div>`).join('')}</div></section>`;}
-async function adminAddTube(){const code=document.getElementById('admin-tube-code').value.trim().toLowerCase(),name=document.getElementById('admin-tube-name').value.trim();if(!code||!name)return alertV17('代碼與名稱必填',true);const{error}=await supabaseClient.from('tube_types').insert({code,name,sort_order:Number(document.getElementById('admin-tube-sort').value)||100,field_schema:[]});if(error)return alertV17(error.message,true);loadAdminTubesBlood();}
+async function loadAdminTubesBlood(){
+    const root=adminRoot(); const[tr,br]=await Promise.all([supabaseClient.from('tube_types').select('*').order('sort_order').order('name'),supabaseClient.from('blood_products').select('*').order('sort_order').order('name')]);
+    const tubes=tr.data||[], blood=br.data||[];
+    v17NextTubeSort=(tubes.reduce((m,x)=>Math.max(m,Number(x.sort_order)||0),0)||0)+1;
+    v17NextBloodSort=(blood.reduce((m,x)=>Math.max(m,Number(x.sort_order)||0),0)||0)+1;
+    root.innerHTML=`<section class="v17-card p-5"><h2 class="font-extrabold text-lg mb-3">新增管路類別</h2><div class="v17-form-grid"><div class="v17-field"><label class="v17-label">代碼</label><input id="admin-tube-code" class="v17-input" placeholder="例如 aline"></div><div class="v17-field"><label class="v17-label">顯示名稱</label><input id="admin-tube-name" class="v17-input" placeholder="例如 A-line"></div><div class="v17-field"><label class="v17-label">排序</label><input id="admin-tube-sort" type="number" class="v17-input" value="${v17NextTubeSort}"></div><div class="v17-field"><button onclick="adminAddTube()" class="v17-btn v17-btn-primary w-full"><i class="fa-solid fa-plus"></i>新增管路</button></div></div><p class="v17-section-note">排序會自動帶入下一順位；既有欄位結構仍可在下方進階欄位 JSON 編輯。</p></section><section class="v17-card p-5"><h2 class="font-extrabold text-lg mb-3">管路主檔</h2><div class="space-y-3">${tubes.map(t=>`<details class="border rounded-xl overflow-hidden"><summary class="p-3 cursor-pointer font-extrabold flex items-center gap-2"><span class="v17-sort-badge">${t.sort_order}</span><span>${escapeHtml(t.name)}</span></summary><div class="p-3 pt-0"><div class="v17-form-grid"><div class="v17-field"><label class="v17-label">名稱</label><input id="tube-name-${t.id}" class="v17-input" value="${escapeHtml(t.name)}"></div><div class="v17-field"><label class="v17-label">排序</label><input id="tube-sort-${t.id}" type="number" class="v17-input" value="${t.sort_order}"></div><div class="v17-field">${renderV17Toggle(`tube-active-${t.id}`,t.is_active,'啟用')}</div></div><div class="mt-3"><label class="v17-label">進階欄位 JSON</label><textarea id="tube-schema-${t.id}" class="v17-input font-mono text-xs h-28">${escapeHtml(JSON.stringify(t.field_schema||[],null,2))}</textarea></div><div class="v17-actions"><button onclick="adminSaveTube('${t.id}')" class="v17-btn v17-btn-primary"><i class="fa-solid fa-floppy-disk"></i>儲存設定</button></div></div></details>`).join('')}</div></section><section class="v17-card p-5"><h2 class="font-extrabold text-lg mb-3">血品</h2><div class="v17-form-grid mb-4"><div class="v17-field"><label class="v17-label">代碼</label><input id="admin-blood-code" class="v17-input" placeholder="例如 WB"></div><div class="v17-field"><label class="v17-label">名稱</label><input id="admin-blood-name" class="v17-input" placeholder="顯示名稱"></div><div class="v17-field"><label class="v17-label">排序</label><input id="admin-blood-sort" type="number" class="v17-input" value="${v17NextBloodSort}"></div><div class="v17-field"><button onclick="adminAddBlood()" class="v17-btn v17-btn-danger w-full"><i class="fa-solid fa-plus"></i>新增血品</button></div></div><div class="space-y-2">${blood.map(b=>`<div class="v17-subcard"><div class="v17-form-grid"><div class="v17-field"><label class="v17-label">名稱</label><input id="blood-name-${b.id}" class="v17-input" value="${escapeHtml(b.name)}"></div><div class="v17-field"><label class="v17-label">排序</label><input id="blood-sort-${b.id}" type="number" class="v17-input" value="${b.sort_order}"></div><div class="v17-field">${renderV17Toggle(`blood-active-${b.id}`,b.is_active,'啟用')}</div></div><div class="v17-actions"><button onclick="adminSaveBlood('${b.id}')" class="v17-btn v17-btn-primary"><i class="fa-solid fa-floppy-disk"></i>儲存設定</button></div></div>`).join('')}</div></section>`;
+}
+async function adminAddTube(){const code=document.getElementById('admin-tube-code').value.trim().toLowerCase(),name=document.getElementById('admin-tube-name').value.trim();if(!code||!name)return alertV17('代碼與名稱必填',true);const{error}=await supabaseClient.from('tube_types').insert({code,name,sort_order:Number(document.getElementById('admin-tube-sort').value)||v17NextTubeSort,field_schema:[]});if(error)return alertV17(error.message,true);alertV17(`${name} 已新增`);loadAdminTubesBlood();}
 async function adminSaveTube(id){let schema;try{schema=JSON.parse(document.getElementById(`tube-schema-${id}`).value||'[]');}catch(e){return alertV17('欄位 JSON 格式錯誤',true);}const{error}=await supabaseClient.from('tube_types').update({name:document.getElementById(`tube-name-${id}`).value.trim(),sort_order:Number(document.getElementById(`tube-sort-${id}`).value)||100,is_active:document.getElementById(`tube-active-${id}`).checked,field_schema:schema}).eq('id',id);if(error)return alertV17(error.message,true);alertV17('管路已儲存');}
-async function adminAddBlood(){const code=document.getElementById('admin-blood-code').value.trim().toUpperCase(),name=document.getElementById('admin-blood-name').value.trim();if(!code||!name)return;const{error}=await supabaseClient.from('blood_products').insert({code,name,sort_order:Number(document.getElementById('admin-blood-sort').value)||100});if(error)return alertV17(error.message,true);loadAdminTubesBlood();}
+async function adminAddBlood(){const code=document.getElementById('admin-blood-code').value.trim().toUpperCase(),name=document.getElementById('admin-blood-name').value.trim();if(!code||!name)return alertV17('代碼與名稱必填',true);const{error}=await supabaseClient.from('blood_products').insert({code,name,sort_order:Number(document.getElementById('admin-blood-sort').value)||v17NextBloodSort});if(error)return alertV17(error.message,true);alertV17(`${name} 已新增`);loadAdminTubesBlood();}
 async function adminSaveBlood(id){const{error}=await supabaseClient.from('blood_products').update({name:document.getElementById(`blood-name-${id}`).value.trim(),sort_order:Number(document.getElementById(`blood-sort-${id}`).value)||100,is_active:document.getElementById(`blood-active-${id}`).checked}).eq('id',id);if(error)return alertV17(error.message,true);alertV17('血品已儲存');}
 async function loadAdminAudit(){const root=adminRoot();const{data,error}=await supabaseClient.from('audit_logs').select('*').order('created_at',{ascending:false}).limit(100);if(error)return root.innerHTML=`<div class="text-red-600">${escapeHtml(error.message)}</div>`;root.innerHTML=`<section class="v17-card p-5"><h2 class="font-extrabold text-lg mb-3">最近 100 筆設定操作</h2>${renderAuditList(data||[])}</section>`;}
 

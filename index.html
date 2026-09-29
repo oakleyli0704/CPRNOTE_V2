@@ -3,11 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>CPR 快速紀錄-V17.4</title>
+    <title>CPR 快速紀錄-V17.5</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="style.css?v=17.4.0">
+    <link rel="stylesheet" href="style.css?v=17.5.0">
 </head>
 <body class="bg-slate-100 min-h-screen flex flex-col font-sans text-slate-800 select-none pb-[80px]">
 
@@ -84,7 +84,7 @@
                             <div class="flex items-center gap-2">
                                 <h1 id="desktop-title" class="text-lg font-extrabold truncate">CPR 即時監看</h1>
                                 <span id="desktop-live-badge" class="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold"><i class="fa-solid fa-circle text-[6px] mr-1"></i>即時同步</span>
-                                <span class="v17-version-pill">V17.4</span>
+                                <span class="v17-version-pill">V17.5</span>
                             </div>
                             <div id="desktop-role-label" class="text-xs text-slate-400"></div>
                         </div>
@@ -203,7 +203,7 @@
                 </div>
 
                 <div id="desktop-admin-panel" class="hidden space-y-5">
-                    <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 flex gap-2 flex-wrap">
+                    <div class="v17-admin-tabs bg-white rounded-2xl border border-slate-200 shadow-sm p-3">
                         <button data-admin-section="units" onclick="switchAdminSection('units')" class="admin-section-btn bg-blue-600 text-white px-4 py-2 rounded-lg font-bold text-sm">單位管理</button>
                         <button data-admin-section="headnurses" onclick="switchAdminSection('headnurses')" class="admin-section-btn bg-slate-100 text-slate-700 px-4 py-2 rounded-lg font-bold text-sm">護理長帳號</button>
                         <button data-admin-section="medications" onclick="switchAdminSection('medications')" class="admin-section-btn bg-slate-100 text-slate-700 px-4 py-2 rounded-lg font-bold text-sm">藥物 / 泡製 / Pump</button>
@@ -819,7 +819,7 @@
 
     </div>
 
-        <script src="supabase-config.js?v=17.4.0"></script>
-    <script src="app.js?v=17.4.0"></script>
+        <script src="supabase-config.js?v=17.5.0"></script>
+    <script src="app.js?v=17.5.0"></script>
 </body>
 </html>

@@ -1,5 +1,5 @@
-// CPRNOTE V17.3 - 管理者後台修正版
-const CPRNOTE_APP_VERSION = "17.3.0";
+// CPRNOTE V17.4 - 管理者後台顯示修正版
+const CPRNOTE_APP_VERSION = "17.4.0";
 // CPRNOTE V17.1 - cache refresh build
 // --- 全域變數 ---
         let isRunning = false;
@@ -3005,7 +3005,7 @@ function switchAdminSection(section){
     if(desktopProfile?.role!=='admin') return;
     v17AdminSection=section;
     const root=adminRoot();
-    if(!root){ console.error('V17.3 admin-section-content not found'); return; }
+    if(!root){ console.error('V17.4 admin-section-content not found'); return; }
     document.querySelectorAll('.admin-section-btn').forEach(b=>{
         const active=b.dataset.adminSection===section;
         b.className=`admin-section-btn px-4 py-2 rounded-lg font-bold text-sm ${active?'bg-blue-600 text-white':'bg-slate-100 text-slate-700'}`;
@@ -3020,11 +3020,11 @@ function switchAdminSection(section){
         else if(section==='audit') task=loadAdminAudit();
         else task=loadAdminUnits();
         Promise.resolve(task).catch(err=>{
-            console.error('V17.3 admin load error',err);
+            console.error('V17.4 admin load error',err);
             root.innerHTML=`<div class="bg-red-50 border border-red-200 text-red-700 p-4 rounded-xl font-bold">管理者後台讀取失敗：${escapeHtml(err?.message||String(err))}</div>`;
         });
     } catch(err) {
-        console.error('V17.3 admin switch error',err);
+        console.error('V17.4 admin switch error',err);
         root.innerHTML=`<div class="bg-red-50 border border-red-200 text-red-700 p-4 rounded-xl font-bold">管理者後台讀取失敗：${escapeHtml(err?.message||String(err))}</div>`;
     }
 }

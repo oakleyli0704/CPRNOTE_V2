@@ -1,3 +1,4 @@
+// CPRNOTE V17.1 - cache refresh build
 // --- 全域變數 ---
         let isRunning = false;
         let isTotalTimerRunning = false;
@@ -2696,6 +2697,15 @@ var v17UnitsCache = [];
 var v17MixSolutions = [];
 var v17MixVolumes = [];
 var v17AdminMedAssociations = { solutions:{}, volumes:{} };
+var v17AdminEditingUnit = null;
+
+function getV17SettingsUnit() {
+    return desktopProfile?.role === 'admin' ? v17AdminEditingUnit : desktopUnit;
+}
+
+function isV17AdminUnitEditing() {
+    return desktopProfile?.role === 'admin' && !!v17AdminEditingUnit;
+}
 
 // 密碼預設隱藏時顯示「閉眼」；點一下顯示密碼後改成開眼
 function togglePasswordVisibility(inputId, iconId) {
@@ -2829,14 +2839,24 @@ async function initDesktopSession() {
 }
 
 function switchDesktopView(view) {
-    if(view === 'unit' && desktopProfile?.role !== 'head_nurse') return;
+    const adminUnitMode = desktopProfile?.role === 'admin' && !!v17AdminEditingUnit;
+    if(view === 'unit' && !(desktopProfile?.role === 'head_nurse' || adminUnitMode)) return;
     if(view === 'admin' && desktopProfile?.role !== 'admin') return;
     v17CurrentDesktopView = view;
-    document.getElementById('desktop-monitor-panel').classList.toggle('hidden', view !== 'monitor');
-    document.getElementById('desktop-unit-settings-panel').classList.toggle('hidden', view !== 'unit');
-    document.getElementById('desktop-admin-panel').classList.toggle('hidden', view !== 'admin');
+    const monitorPanel = document.getElementById('desktop-monitor-panel');
+    const unitPanel = document.getElementById('desktop-unit-settings-panel');
+    const adminPanel = document.getElementById('desktop-admin-panel');
+    monitorPanel.classList.toggle('hidden', view !== 'monitor');
+    unitPanel.classList.toggle('hidden', view !== 'unit');
+    adminPanel.classList.toggle('hidden', view !== 'admin');
+    // 確保 GitHub Pages 快取或 Tailwind class 不會造成空白面板
+    monitorPanel.style.display = view === 'monitor' ? '' : 'none';
+    unitPanel.style.display = view === 'unit' ? '' : 'none';
+    adminPanel.style.display = view === 'admin' ? '' : 'none';
     document.querySelectorAll('.desktop-main-nav').forEach(btn => {
-        const active = (btn.id === 'nav-monitor' && view==='monitor') || (btn.id==='nav-unit-settings' && view==='unit') || (btn.id==='nav-admin' && view==='admin');
+        const active = (btn.id === 'nav-monitor' && view==='monitor')
+          || (btn.id==='nav-unit-settings' && view==='unit' && desktopProfile?.role==='head_nurse')
+          || (btn.id==='nav-admin' && (view==='admin' || (view==='unit' && adminUnitMode)));
         btn.className = `desktop-main-nav px-4 py-2 rounded-lg text-sm font-bold whitespace-nowrap ${active ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-200'}`;
     });
     if(view === 'unit') loadHeadNurseSettings();
@@ -2844,37 +2864,46 @@ function switchDesktopView(view) {
 }
 
 async function loadHeadNurseSettings() {
-    if(!desktopUnit) return;
-    document.getElementById('unit-settings-title').innerText = `${desktopUnit.code} 單位設定`;
+    const settingsUnit = getV17SettingsUnit();
+    if(!settingsUnit) return;
+    const adminMode = isV17AdminUnitEditing();
+    document.getElementById('unit-settings-title').innerText = adminMode ? `${settingsUnit.code} 單位設定｜管理者` : `${settingsUnit.code} 單位設定`;
     const root = document.getElementById('unit-settings-content');
     root.innerHTML = '<div class="text-center text-slate-400 py-10"><i class="fa-solid fa-spinner fa-spin mr-1"></i>讀取中...</div>';
     try {
         const [medsR, musR, tubesR, tusR, bloodR, busR, auditR] = await Promise.all([
             supabaseClient.from('medications').select('*').eq('is_active', true).order('global_sort'),
-            supabaseClient.from('medication_unit_settings').select('*').eq('unit_id', desktopUnit.id),
+            supabaseClient.from('medication_unit_settings').select('*').eq('unit_id', settingsUnit.id),
             supabaseClient.from('tube_types').select('*').eq('is_active', true).order('sort_order'),
-            supabaseClient.from('tube_unit_settings').select('*').eq('unit_id', desktopUnit.id),
+            supabaseClient.from('tube_unit_settings').select('*').eq('unit_id', settingsUnit.id),
             supabaseClient.from('blood_products').select('*').eq('is_active', true).order('sort_order'),
-            supabaseClient.from('blood_unit_settings').select('*').eq('unit_id', desktopUnit.id),
-            supabaseClient.from('audit_logs').select('*').eq('unit_id', desktopUnit.id).order('created_at',{ascending:false}).limit(20)
+            supabaseClient.from('blood_unit_settings').select('*').eq('unit_id', settingsUnit.id),
+            supabaseClient.from('audit_logs').select('*').eq('unit_id', settingsUnit.id).order('created_at',{ascending:false}).limit(20)
         ]);
         [medsR,musR,tubesR,tusR,bloodR,busR].forEach(r=>{ if(r.error) throw r.error; });
         const mus = Object.fromEntries((musR.data||[]).map(x=>[x.medication_id,x]));
         const tus = Object.fromEntries((tusR.data||[]).map(x=>[x.tube_type_id,x]));
         const bus = Object.fromEntries((busR.data||[]).map(x=>[x.blood_product_id,x]));
-        root.innerHTML = `
+        const adminHeader = adminMode ? `
+          <section class="v17-card p-4 border-blue-200 bg-blue-50">
+            <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+              <div><div class="font-extrabold text-blue-900">${escapeHtml(settingsUnit.code)}｜${escapeHtml(settingsUnit.name||settingsUnit.code)}</div><div class="text-sm text-blue-700 mt-1">管理者目前正在編輯此單位的「單位層設定」。全院主檔與全院預設仍請回管理者後台維護。</div></div>
+              <button onclick="adminBackFromUnitSettings()" class="px-4 py-2.5 rounded-lg bg-slate-800 text-white font-bold whitespace-nowrap"><i class="fa-solid fa-arrow-left mr-1"></i>返回單位管理</button>
+            </div>
+          </section>` : '';
+        root.innerHTML = `${adminHeader}
           <section class="v17-card p-5">
             <h3 class="font-extrabold text-slate-800 mb-1"><i class="fa-solid fa-key text-amber-500 mr-1"></i>單位登入密碼</h3>
-            <p class="text-sm text-slate-500 mb-4">帳號固定為 <b>${escapeHtml(desktopUnit.code)}</b>，護理長只能修改密碼。</p>
+            <p class="text-sm text-slate-500 mb-4">帳號固定為 <b>${escapeHtml(settingsUnit.code)}</b>，${adminMode?'管理者可重設此單位密碼。':'護理長只能修改自己單位的密碼。'}</p>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-3 max-w-2xl">
               <div><label class="v17-label">新密碼</label><div class="relative"><input id="unit-new-password" type="password" class="v17-input pr-12" placeholder="至少 8 碼"><button onclick="togglePasswordVisibility('unit-new-password','unit-new-password-eye')" class="absolute right-1 top-1 bottom-1 w-10 text-slate-500"><i id="unit-new-password-eye" class="fa-solid fa-eye-slash"></i></button></div></div>
               <div><label class="v17-label">再次輸入</label><div class="relative"><input id="unit-new-password2" type="password" class="v17-input pr-12" placeholder="再次輸入"><button onclick="togglePasswordVisibility('unit-new-password2','unit-new-password2-eye')" class="absolute right-1 top-1 bottom-1 w-10 text-slate-500"><i id="unit-new-password2-eye" class="fa-solid fa-eye-slash"></i></button></div></div>
             </div>
             <button onclick="changeOwnUnitPassword()" class="mt-3 px-4 py-2.5 bg-blue-600 text-white rounded-lg font-bold">儲存新密碼</button>
           </section>
-          <section class="v17-card p-5"><h3 class="font-extrabold text-slate-800 mb-3"><i class="fa-solid fa-pills text-purple-500 mr-1"></i>藥物設定</h3><div class="space-y-3">${(medsR.data||[]).map(m=>renderHNMedCard(m,mus[m.id])).join('')}</div></section>
-          <section class="v17-card p-5"><h3 class="font-extrabold text-slate-800 mb-3"><i class="fa-solid fa-syringe text-teal-500 mr-1"></i>管路預設</h3><div class="space-y-3">${(tubesR.data||[]).map(t=>renderHNTubeCard(t,tus[t.id])).join('')}</div></section>
-          <section class="v17-card p-5"><h3 class="font-extrabold text-slate-800 mb-3"><i class="fa-solid fa-droplet text-red-500 mr-1"></i>血品預設</h3><div class="space-y-3">${(bloodR.data||[]).map(b=>renderHNBloodCard(b,bus[b.id])).join('')}</div></section>
+          <section class="v17-card p-5"><h3 class="font-extrabold text-slate-800 mb-3"><i class="fa-solid fa-pills text-purple-500 mr-1"></i>藥物設定</h3><div class="space-y-3">${(medsR.data||[]).map(m=>renderHNMedCard(m,mus[m.id]||{})).join('')}</div></section>
+          <section class="v17-card p-5"><h3 class="font-extrabold text-slate-800 mb-3"><i class="fa-solid fa-syringe text-teal-500 mr-1"></i>管路預設</h3><div class="space-y-3">${(tubesR.data||[]).map(t=>renderHNTubeCard(t,tus[t.id]||{})).join('')}</div></section>
+          <section class="v17-card p-5"><h3 class="font-extrabold text-slate-800 mb-3"><i class="fa-solid fa-droplet text-red-500 mr-1"></i>血品預設</h3><div class="space-y-3">${(bloodR.data||[]).map(b=>renderHNBloodCard(b,bus[b.id]||{})).join('')}</div></section>
           <section class="v17-card p-5"><h3 class="font-extrabold text-slate-800 mb-3"><i class="fa-solid fa-clock-rotate-left text-slate-500 mr-1"></i>最近設定紀錄</h3>${renderAuditList(auditR.data||[])}</section>`;
     } catch(err) {
         console.error(err); root.innerHTML = `<div class="bg-red-50 text-red-700 p-4 rounded-xl font-bold">讀取單位設定失敗：${escapeHtml(err.message||'')}</div>`;
@@ -2884,20 +2913,23 @@ async function loadHeadNurseSettings() {
 function renderHNMedCard(m,s={}) {
     const epi = m.system_key === 'epinephrine';
     const quick = Array.isArray(s.quick_qty) ? s.quick_qty.join(',') : '1';
-    const pumpVal = s.pump_default_value_override ?? m.pump_default_value ?? '';
+    const pumpOverride = s.pump_default_value_override ?? '';
+    const globalPump = m.pump_default_value ?? '';
+    const adminMode = isV17AdminUnitEditing();
     return `<div class="border border-slate-200 rounded-xl p-4" data-hn-med="${m.id}">
-      <div class="flex items-center justify-between gap-3"><div><div class="font-extrabold text-slate-800">${escapeHtml(m.name)} ${epi?'<span class="text-[10px] bg-red-100 text-red-700 px-2 py-0.5 rounded-full">固定第一</span>':''}</div><div class="text-xs text-slate-400">${escapeHtml(m.generic_name||'')} ${m.has_pump?`｜Pump ${m.pump_min_qty}支以上`:''}</div></div><label class="text-sm font-bold"><input id="hn-med-visible-${m.id}" type="checkbox" ${epi||s.is_visible!==false?'checked':''} ${epi?'disabled':''}> 顯示</label></div>
+      <div class="flex items-center justify-between gap-3"><div><div class="font-extrabold text-slate-800">${escapeHtml(m.name)} ${epi?'<span class="text-[10px] bg-red-100 text-red-700 px-2 py-0.5 rounded-full">固定第一</span>':''}</div><div class="text-xs text-slate-400">${escapeHtml(m.generic_name||'')} ${m.has_pump?`｜Pump ${m.pump_min_qty}支以上`:''}</div>${adminMode?`<div class="text-[11px] text-blue-600 mt-1">全院預設：${m.default_qty ?? 1} 支${m.has_pump?`｜Pump ${globalPump===''?'未設定':escapeHtml(globalPump)} ${escapeHtml(m.pump_unit||'')}`:''}</div>`:''}</div><label class="text-sm font-bold"><input id="hn-med-visible-${m.id}" type="checkbox" ${epi||s.is_visible!==false?'checked':''} ${epi?'disabled':''}> 顯示</label></div>
       <div class="grid grid-cols-2 md:grid-cols-5 gap-2 mt-3">
         <div><label class="v17-label">預設支數</label><input id="hn-med-qty-${m.id}" type="number" step="0.5" class="v17-input" value="${s.default_qty ?? m.default_qty ?? 1}"></div>
         <div class="md:col-span-2"><label class="v17-label">快速選擇（逗號分隔）</label><input id="hn-med-quick-${m.id}" class="v17-input" value="${escapeHtml(quick)}" placeholder="1,2,6"></div>
         <div><label class="v17-label">排序</label><input id="hn-med-sort-${m.id}" type="number" class="v17-input" value="${epi?1:(s.sort_order ?? m.global_sort ?? 100)}" ${epi?'disabled':''}></div>
-        <div><label class="v17-label">Pump預設${m.has_pump?'':'（此藥無Pump）'}</label><input id="hn-med-pump-${m.id}" type="number" step="0.1" class="v17-input" value="${pumpVal}" ${m.has_pump?'':'disabled'}></div>
-      </div><button onclick="saveHNMedication('${m.id}')" class="mt-3 px-3 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold">儲存</button></div>`;
+        <div><label class="v17-label">Pump單位預設${m.has_pump?'':'（此藥無Pump）'}</label><input id="hn-med-pump-${m.id}" type="number" step="0.1" class="v17-input" value="${pumpOverride}" placeholder="${m.has_pump&&globalPump!==''?`留空＝全院 ${escapeHtml(globalPump)}`:''}" ${m.has_pump?'':'disabled'}></div>
+      </div><div class="mt-3 flex gap-2 flex-wrap"><button onclick="saveHNMedication('${m.id}')" class="px-3 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold">儲存</button>${m.has_pump?`<button onclick="resetUnitPumpDefault('${m.id}')" class="px-3 py-2 bg-slate-100 text-slate-700 border border-slate-300 rounded-lg text-sm font-bold">Pump恢復全院預設</button>`:''}</div></div>`;
 }
 
 async function saveHNMedication(id) {
     const quick = document.getElementById(`hn-med-quick-${id}`).value.split(',').map(x=>Number(x.trim())).filter(x=>Number.isFinite(x)&&x>0);
-    const payload = { unit_id:desktopUnit.id, medication_id:id,
+    const settingsUnit = getV17SettingsUnit(); if(!settingsUnit) return alertV17('找不到目前單位',true);
+    const payload = { unit_id:settingsUnit.id, medication_id:id,
       is_visible:document.getElementById(`hn-med-visible-${id}`).checked,
       default_qty:Number(document.getElementById(`hn-med-qty-${id}`).value)||1,
       quick_qty:quick.length?quick:[1],
@@ -2908,6 +2940,15 @@ async function saveHNMedication(id) {
     if(error) return alertV17(`儲存失敗：${error.message}`,true); alertV17('藥物設定已儲存');
 }
 
+async function resetUnitPumpDefault(id) {
+    const settingsUnit=getV17SettingsUnit();
+    if(!settingsUnit)return alertV17('找不到目前單位',true);
+    const {error}=await supabaseClient.from('medication_unit_settings').update({pump_default_value_override:null}).eq('unit_id',settingsUnit.id).eq('medication_id',id);
+    if(error)return alertV17(`恢復失敗：${error.message}`,true);
+    alertV17('已恢復使用全院 Pump 預設');
+    loadHeadNurseSettings();
+}
+
 function renderHNTubeCard(t,s={}) {
     const defs=s.default_values||{}; const fields=Array.isArray(t.field_schema)?t.field_schema:[];
     return `<div class="border border-slate-200 rounded-xl p-4"><div class="flex justify-between gap-3"><div class="font-extrabold">${escapeHtml(t.name)}</div><label class="text-sm font-bold"><input id="hn-tube-visible-${t.id}" type="checkbox" ${s.is_visible!==false?'checked':''}> 顯示</label></div><div class="grid grid-cols-2 md:grid-cols-4 gap-2 mt-3"><div><label class="v17-label">排序</label><input id="hn-tube-sort-${t.id}" type="number" class="v17-input" value="${s.sort_order ?? t.sort_order ?? 100}"></div>${fields.map(f=>`<div><label class="v17-label">${escapeHtml(f.label||f.key)} 預設</label><input id="hn-tube-def-${t.id}-${escapeHtml(f.key)}" class="v17-input" value="${escapeHtml(defs[f.key] ?? f.default ?? '')}"></div>`).join('')}</div><button onclick="saveHNTube('${t.id}')" class="mt-3 px-3 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold">儲存</button></div>`;
@@ -2915,13 +2956,14 @@ function renderHNTubeCard(t,s={}) {
 async function saveHNTube(id) {
     const { data:t } = await supabaseClient.from('tube_types').select('*').eq('id',id).single();
     const defs={}; (t?.field_schema||[]).forEach(f=>{ const el=document.getElementById(`hn-tube-def-${id}-${f.key}`); if(el&&el.value!=='') defs[f.key]=el.value; });
-    const payload={unit_id:desktopUnit.id,tube_type_id:id,is_visible:document.getElementById(`hn-tube-visible-${id}`).checked,sort_order:Number(document.getElementById(`hn-tube-sort-${id}`).value)||100,default_values:defs};
+    const settingsUnit=getV17SettingsUnit(); if(!settingsUnit)return alertV17('找不到目前單位',true);
+    const payload={unit_id:settingsUnit.id,tube_type_id:id,is_visible:document.getElementById(`hn-tube-visible-${id}`).checked,sort_order:Number(document.getElementById(`hn-tube-sort-${id}`).value)||100,default_values:defs};
     const {error}=await supabaseClient.from('tube_unit_settings').upsert(payload,{onConflict:'unit_id,tube_type_id'}); if(error)return alertV17(`儲存失敗：${error.message}`,true); alertV17('管路設定已儲存');
 }
 function renderHNBloodCard(b,s={}) { return `<div class="border border-slate-200 rounded-xl p-4 grid grid-cols-1 md:grid-cols-4 gap-2 items-end"><div class="font-extrabold">${escapeHtml(b.name)}</div><label class="text-sm font-bold"><input id="hn-blood-visible-${b.id}" type="checkbox" ${s.is_visible!==false?'checked':''}> 顯示</label><div><label class="v17-label">預設 U</label><input id="hn-blood-u-${b.id}" type="number" step="0.5" class="v17-input" value="${s.default_units ?? 2}"></div><div><label class="v17-label">排序</label><div class="flex gap-2"><input id="hn-blood-sort-${b.id}" type="number" class="v17-input" value="${s.sort_order ?? b.sort_order ?? 100}"><button onclick="saveHNBlood('${b.id}')" class="px-3 bg-blue-600 text-white rounded-lg font-bold">儲存</button></div></div></div>`; }
-async function saveHNBlood(id){ const payload={unit_id:desktopUnit.id,blood_product_id:id,is_visible:document.getElementById(`hn-blood-visible-${id}`).checked,default_units:Number(document.getElementById(`hn-blood-u-${id}`).value)||1,sort_order:Number(document.getElementById(`hn-blood-sort-${id}`).value)||100}; const {error}=await supabaseClient.from('blood_unit_settings').upsert(payload,{onConflict:'unit_id,blood_product_id'}); if(error)return alertV17(`儲存失敗：${error.message}`,true); alertV17('血品設定已儲存'); }
+async function saveHNBlood(id){ const settingsUnit=getV17SettingsUnit(); if(!settingsUnit)return alertV17('找不到目前單位',true); const payload={unit_id:settingsUnit.id,blood_product_id:id,is_visible:document.getElementById(`hn-blood-visible-${id}`).checked,default_units:Number(document.getElementById(`hn-blood-u-${id}`).value)||1,sort_order:Number(document.getElementById(`hn-blood-sort-${id}`).value)||100}; const {error}=await supabaseClient.from('blood_unit_settings').upsert(payload,{onConflict:'unit_id,blood_product_id'}); if(error)return alertV17(`儲存失敗：${error.message}`,true); alertV17('血品設定已儲存'); }
 
-async function changeOwnUnitPassword(){ const p=document.getElementById('unit-new-password').value,p2=document.getElementById('unit-new-password2').value; if(p.length<8)return alertV17('密碼至少 8 碼',true); if(p!==p2)return alertV17('兩次密碼不一致',true); try{await invokeV17UserAdmin({action:'reset_unit_password',unitId:desktopUnit.id,password:p}); document.getElementById('unit-new-password').value='';document.getElementById('unit-new-password2').value='';alertV17('單位密碼已更新');}catch(e){alertV17(e.message,true);} }
+async function changeOwnUnitPassword(){ const settingsUnit=getV17SettingsUnit(); if(!settingsUnit)return alertV17('找不到目前單位',true); const p=document.getElementById('unit-new-password').value,p2=document.getElementById('unit-new-password2').value; if(p.length<8)return alertV17('密碼至少 8 碼',true); if(p!==p2)return alertV17('兩次密碼不一致',true); try{await invokeV17UserAdmin({action:'reset_unit_password',unitId:settingsUnit.id,password:p}); document.getElementById('unit-new-password').value='';document.getElementById('unit-new-password2').value='';alertV17(`${settingsUnit.code} 單位密碼已更新`);}catch(e){alertV17(e.message,true);} }
 
 function alertV17(msg,error=false){ desktopFlashLiveBadge(error?'操作失敗':'已儲存',error); const el=document.getElementById('desktop-last-sync'); if(el)el.innerText=msg; }
 function renderAuditList(list){ if(!list.length)return '<div class="text-sm text-slate-400 py-4">尚無設定紀錄</div>'; return `<div class="space-y-2">${list.map(x=>`<div class="text-sm border-b border-slate-100 pb-2"><b>${escapeHtml(x.actor_username||'系統')}</b>｜${escapeHtml(x.action)}<div class="text-xs text-slate-400">${formatDesktopDate(x.created_at)}</div></div>`).join('')}</div>`; }
@@ -2929,7 +2971,30 @@ function renderAuditList(list){ if(!list.length)return '<div class="text-sm text
 function switchAdminSection(section){ if(desktopProfile?.role!=='admin')return; v17AdminSection=section; document.querySelectorAll('.admin-section-btn').forEach(b=>{const active=b.dataset.adminSection===section;b.className=`admin-section-btn px-4 py-2 rounded-lg font-bold text-sm ${active?'bg-blue-600 text-white':'bg-slate-100 text-slate-700'}`;}); if(section==='units')loadAdminUnits(); if(section==='headnurses')loadAdminHeadNurses(); if(section==='medications')loadAdminMedications(); if(section==='rhythms')loadAdminRhythms(); if(section==='tubes')loadAdminTubesBlood(); if(section==='audit')loadAdminAudit(); }
 function adminRoot(){return document.getElementById('admin-section-content');}
 
-async function loadAdminUnits(){ const root=adminRoot(); root.innerHTML='<div class="text-center text-slate-400 py-10">讀取中...</div>'; const {data,error}=await supabaseClient.from('units').select('*').order('sort_order').order('code'); if(error)return root.innerHTML=`<div class="text-red-600">${escapeHtml(error.message)}</div>`; v17UnitsCache=data||[]; root.innerHTML=`<section class="v17-card p-5"><h2 class="font-extrabold text-lg mb-3">新增使用單位</h2><div class="grid grid-cols-1 md:grid-cols-4 gap-3"><div><label class="v17-label">單位代碼 / 帳號</label><input id="admin-unit-code" class="v17-input uppercase" placeholder="例如：8A"></div><div><label class="v17-label">單位名稱</label><input id="admin-unit-name" class="v17-input" placeholder="例如：8A病房"></div><div><label class="v17-label">初始密碼</label><div class="relative"><input id="admin-unit-password" type="password" class="v17-input pr-12" placeholder="至少8碼"><button onclick="togglePasswordVisibility('admin-unit-password','admin-unit-password-eye')" class="absolute right-1 top-1 bottom-1 w-10 text-slate-500"><i id="admin-unit-password-eye" class="fa-solid fa-eye-slash"></i></button></div></div><div class="flex items-end"><button onclick="adminCreateUnit()" class="w-full py-2.5 bg-blue-600 text-white rounded-lg font-bold">新增單位</button></div></div><p class="text-xs text-slate-400 mt-2">帳號建立後固定為單位代碼；護理長只能改密碼。基於 Supabase 安全限制，密碼至少 8 碼。</p></section><section class="v17-card p-5"><h2 class="font-extrabold text-lg mb-3">目前單位</h2><div class="space-y-2">${(data||[]).map(u=>`<div class="flex items-center justify-between border border-slate-200 rounded-xl p-3"><div><b>${escapeHtml(u.code)}</b><span class="text-slate-500 ml-2">${escapeHtml(u.name)}</span></div><button onclick="adminToggleUnit('${u.id}',${!u.is_active})" class="px-3 py-1.5 rounded-lg text-sm font-bold ${u.is_active?'bg-emerald-100 text-emerald-700':'bg-slate-200 text-slate-600'}">${u.is_active?'啟用中':'已停用'}</button></div>`).join('')}</div></section>`; }
+async function loadAdminUnits(){
+    const root=adminRoot();
+    root.innerHTML='<div class="text-center text-slate-400 py-10">讀取中...</div>';
+    const {data,error}=await supabaseClient.from('units').select('*').order('sort_order').order('code');
+    if(error)return root.innerHTML=`<div class="text-red-600">${escapeHtml(error.message)}</div>`;
+    v17UnitsCache=data||[];
+    root.innerHTML=`<section class="v17-card p-5"><h2 class="font-extrabold text-lg mb-3">新增使用單位</h2><div class="grid grid-cols-1 md:grid-cols-4 gap-3"><div><label class="v17-label">單位代碼 / 帳號</label><input id="admin-unit-code" class="v17-input uppercase" placeholder="例如：8A"></div><div><label class="v17-label">單位名稱</label><input id="admin-unit-name" class="v17-input" placeholder="例如：8A病房"></div><div><label class="v17-label">初始密碼</label><div class="relative"><input id="admin-unit-password" type="password" class="v17-input pr-12" placeholder="至少8碼"><button onclick="togglePasswordVisibility('admin-unit-password','admin-unit-password-eye')" class="absolute right-1 top-1 bottom-1 w-10 text-slate-500"><i id="admin-unit-password-eye" class="fa-solid fa-eye-slash"></i></button></div></div><div class="flex items-end"><button onclick="adminCreateUnit()" class="w-full py-2.5 bg-blue-600 text-white rounded-lg font-bold">新增單位</button></div></div><p class="text-xs text-slate-400 mt-2">帳號建立後固定為單位代碼；護理長只能改密碼。管理者可進入任一單位查看與修改單位層設定。</p></section>
+    <section class="v17-card p-5"><h2 class="font-extrabold text-lg mb-3">目前單位</h2><div class="space-y-2">${(data||[]).map(u=>`<div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 border border-slate-200 rounded-xl p-3"><div><b>${escapeHtml(u.code)}</b><span class="text-slate-500 ml-2">${escapeHtml(u.name)}</span><div class="text-xs text-slate-400 mt-1">登入帳號固定：${escapeHtml(u.code)}</div></div><div class="flex gap-2 flex-wrap"><button onclick="adminOpenUnitSettings('${u.id}')" class="px-3 py-1.5 rounded-lg text-sm font-bold bg-blue-600 text-white"><i class="fa-solid fa-sliders mr-1"></i>查看 / 設定</button><button onclick="adminToggleUnit('${u.id}',${!u.is_active})" class="px-3 py-1.5 rounded-lg text-sm font-bold ${u.is_active?'bg-emerald-100 text-emerald-700':'bg-slate-200 text-slate-600'}">${u.is_active?'啟用中':'已停用'}</button></div></div>`).join('')}</div></section>`;
+}
+
+function adminOpenUnitSettings(unitId){
+    if(desktopProfile?.role!=='admin') return;
+    const unit=v17UnitsCache.find(u=>u.id===unitId);
+    if(!unit) return alertV17('找不到此單位',true);
+    v17AdminEditingUnit=unit;
+    switchDesktopView('unit');
+}
+
+function adminBackFromUnitSettings(){
+    v17AdminEditingUnit=null;
+    v17AdminSection='units';
+    switchDesktopView('admin');
+}
+
 async function adminCreateUnit(){const code=document.getElementById('admin-unit-code').value.trim().toUpperCase(),name=document.getElementById('admin-unit-name').value.trim()||code,p=document.getElementById('admin-unit-password').value;if(!code)return alertV17('請輸入單位代碼',true);if(p.length<8)return alertV17('初始密碼至少8碼',true);try{await invokeV17UserAdmin({action:'create_unit',unitCode:code,unitName:name,password:p});alertV17(`${code} 已建立`);loadAdminUnits();}catch(e){alertV17(e.message,true);}}
 async function adminToggleUnit(id,isActive){const{error}=await supabaseClient.from('units').update({is_active:isActive,updated_at:new Date().toISOString()}).eq('id',id);if(error)return alertV17(error.message,true);loadAdminUnits();}
 

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>CPR 快速紀錄-V16.1</title>
+    <title>CPR 快速紀錄-V16.2</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -459,7 +459,7 @@
             
             <!-- 版權宣告 (頁籤 1 底部) -->
             <div class="text-center text-[10px] text-slate-400 mt-2 pb-6">
-                Copyright &copy; MentoLi 2026｜V15.2<br>此版本非正式紀錄，僅促進急救時紀錄品質
+                Copyright &copy; MentoLi 2026｜V16.2<br>此版本非正式紀錄，僅促進急救時紀錄品質
             </div>
         </div>
 
@@ -468,25 +468,26 @@
 
             <!-- V15.2：時間軸專用精簡狀態列；切到時間軸時隱藏上方大型操作區 -->
             <div id="timeline-mini-header" class="p-2 border-b border-slate-700 bg-slate-900 sticky top-0 z-30 shadow-md">
-                <div class="flex justify-between items-center gap-2">
-                    <div class="min-w-0 flex-1 flex items-center gap-1.5 text-[11px] md:text-xs whitespace-nowrap overflow-x-auto no-scrollbar">
-                        <span id="timeline-unit" class="font-extrabold text-teal-300">12B</span>
+                <!-- V16.2：手機時間軸第一行完整保留 CPR / Adrenalin；藥物總計移到第二行，避免窄螢幕遮擋 -->
+                <div class="min-w-0 w-full flex items-center gap-1.5 text-[11px] md:text-xs whitespace-nowrap overflow-x-auto no-scrollbar">
+                    <span id="timeline-unit" class="font-extrabold text-teal-300">12B</span>
+                    <span class="text-slate-600">｜</span>
+                    <span id="timeline-bed" class="font-bold text-white">尚未開始</span>
+                    <span class="text-slate-600">｜</span>
+                    <span class="text-slate-400">CPR</span>
+                    <span id="timeline-total" class="font-mono font-bold text-blue-300">00:00:00</span>
+                    <span id="timeline-epi-wrap" class="hidden items-center gap-1">
                         <span class="text-slate-600">｜</span>
-                        <span id="timeline-bed" class="font-bold text-white">尚未開始</span>
-                        <span class="text-slate-600">｜</span>
-                        <span class="text-slate-400">CPR</span>
-                        <span id="timeline-total" class="font-mono font-bold text-blue-300">00:00:00</span>
-                        <span id="timeline-epi-wrap" class="hidden items-center gap-1">
-                            <span class="text-slate-600">｜</span>
-                            <span class="text-slate-400">Adrenalin</span>
-                            <span id="timeline-epi" class="font-mono font-bold text-red-300">--:--</span>
-                        </span>
-                    </div>
+                        <span class="text-slate-400">Adrenalin</span>
+                        <span id="timeline-epi" class="font-mono font-bold text-red-300">--:--</span>
+                    </span>
+                </div>
+                <div class="mt-1.5 flex items-center justify-between gap-2">
+                    <div class="text-[10px] text-slate-500 leading-tight">點擊時間修改，點垃圾桶刪除</div>
                     <button onclick="openSummaryModal()" class="shrink-0 bg-purple-600 text-white px-3 py-1.5 rounded text-xs font-bold btn-active flex items-center gap-1">
                         <i class="fa-solid fa-pills"></i> 藥物總計
                     </button>
                 </div>
-                <div class="text-[10px] text-slate-500 mt-1">點擊時間修改，點垃圾桶刪除</div>
             </div>
 
             <div class="flex gap-2 p-2 bg-slate-900 border-b border-slate-700 overflow-x-auto no-scrollbar">
@@ -521,7 +522,7 @@
                 </button>
                 <!-- 版權宣告 -->
                 <div class="text-center text-[10px] text-slate-500 mt-2 leading-tight">
-                    Copyright &copy; MentoLi 2026｜V15.2<br>此版本非正式紀錄，僅促進急救時紀錄品質
+                    Copyright &copy; MentoLi 2026｜V16.2<br>此版本非正式紀錄，僅促進急救時紀錄品質
                 </div>
             </div>
         </div>

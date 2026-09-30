@@ -3,11 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>CPR 快速紀錄-V17.7</title>
+    <title>CPR 快速紀錄-V18.1</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="style.css?v=17.7.0">
+    <link rel="stylesheet" href="style.css?v=18.1.0">
 </head>
 <body class="bg-slate-100 min-h-screen flex flex-col font-sans text-slate-800 select-none pb-[80px]">
 
@@ -38,7 +38,7 @@
                             <div class="flex items-center gap-2">
                                 <h1 id="desktop-title" class="text-lg font-extrabold truncate">CPR 即時監看</h1>
                                 <span id="desktop-live-badge" class="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold"><i class="fa-solid fa-circle text-[6px] mr-1"></i>即時同步</span>
-                                <span class="v17-version-pill">V17.7</span>
+                                <span class="v17-version-pill">V18.1</span>
                             </div>
                             <div id="desktop-role-label" class="text-xs text-slate-400"></div>
                         </div>
@@ -54,6 +54,7 @@
                 <div id="desktop-nav" class="max-w-[1500px] mx-auto px-5 pb-3 flex gap-2 overflow-x-auto no-scrollbar">
                     <button id="nav-monitor" onclick="switchDesktopView('monitor')" class="desktop-main-nav px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-bold whitespace-nowrap"><i class="fa-solid fa-heart-pulse mr-1"></i>CPR監看</button>
                     <button id="nav-unit-settings" onclick="switchDesktopView('unit')" class="desktop-main-nav hidden px-4 py-2 rounded-lg bg-slate-800 text-slate-200 text-sm font-bold whitespace-nowrap"><i class="fa-solid fa-sliders mr-1"></i>單位設定</button>
+                    <button id="nav-feedback" onclick="switchDesktopView('feedback')" class="desktop-main-nav hidden px-4 py-2 rounded-lg bg-slate-800 text-slate-200 text-sm font-bold whitespace-nowrap"><i class="fa-solid fa-comments mr-1"></i>使用意見</button>
                     <button id="nav-admin" onclick="switchDesktopView('admin')" class="desktop-main-nav hidden px-4 py-2 rounded-lg bg-slate-800 text-slate-200 text-sm font-bold whitespace-nowrap"><i class="fa-solid fa-gear mr-1"></i>管理者後台</button>
                 </div>
             </header>
@@ -159,6 +160,13 @@
                     <div id="unit-settings-content" class="space-y-5"><div class="text-center text-slate-400 py-10">讀取中...</div></div>
                 </div>
 
+                <div id="desktop-feedback-panel" class="hidden space-y-5">
+                    <section class="v18-card p-5">
+                        <div class="v18-section-head"><div><h2 class="text-xl font-extrabold text-slate-800"><i class="fa-solid fa-comments text-blue-600 mr-2"></i>使用意見</h2><p class="text-sm text-slate-500 mt-1">可提出操作問題、功能建議或系統異常；管理者回覆後會寄到您的聯絡 Email。</p></div></div>
+                    </section>
+                    <div id="head-nurse-feedback-content" class="space-y-5"><div class="text-center text-slate-400 py-10">讀取中...</div></div>
+                </div>
+
                 <div id="desktop-admin-panel" class="hidden space-y-5">
                     <div class="v17-admin-tabs bg-white rounded-2xl border border-slate-200 shadow-sm p-3">
                         <button data-admin-section="units" onclick="switchAdminSection('units')" class="admin-section-btn bg-blue-600 text-white px-4 py-2 rounded-lg font-bold text-sm">單位管理</button>
@@ -166,6 +174,9 @@
                         <button data-admin-section="medications" onclick="switchAdminSection('medications')" class="admin-section-btn bg-slate-100 text-slate-700 px-4 py-2 rounded-lg font-bold text-sm">藥物 / 泡製 / Pump</button>
                         <button data-admin-section="rhythms" onclick="switchAdminSection('rhythms')" class="admin-section-btn bg-slate-100 text-slate-700 px-4 py-2 rounded-lg font-bold text-sm">心律 / 電擊</button>
                         <button data-admin-section="tubes" onclick="switchAdminSection('tubes')" class="admin-section-btn bg-slate-100 text-slate-700 px-4 py-2 rounded-lg font-bold text-sm">管路 / 血品</button>
+                        <button data-admin-section="deletions" onclick="switchAdminSection('deletions')" class="admin-section-btn bg-slate-100 text-slate-700 px-4 py-2 rounded-lg font-bold text-sm">刪除申請</button>
+                        <button data-admin-section="feedback" onclick="switchAdminSection('feedback')" class="admin-section-btn bg-slate-100 text-slate-700 px-4 py-2 rounded-lg font-bold text-sm">使用意見</button>
+                        <button data-admin-section="ratings" onclick="switchAdminSection('ratings')" class="admin-section-btn bg-slate-100 text-slate-700 px-4 py-2 rounded-lg font-bold text-sm">使用體驗</button>
                         <button data-admin-section="audit" onclick="switchAdminSection('audit')" class="admin-section-btn bg-slate-100 text-slate-700 px-4 py-2 rounded-lg font-bold text-sm">操作紀錄</button>
                     </div>
                     <div id="admin-section-content"><div class="text-center text-slate-400 py-10">讀取中...</div></div>
@@ -780,7 +791,45 @@
     </div>
 
 
-    <!-- V17.7 裝置設定抽屜 -->
+    <!-- V18 刪除申請 Modal -->
+    <div id="v18-delete-modal" class="v18-modal-backdrop hidden">
+      <div class="v18-modal-card">
+        <div class="v18-modal-head"><div><h3>申請刪除 CPR 紀錄</h3><p id="v18-delete-case-meta">--</p></div><button onclick="closeV18DeleteModal()" class="v18-icon-btn"><i class="fa-solid fa-xmark"></i></button></div>
+        <div class="space-y-3 mt-4">
+          <label class="v18-radio"><input type="radio" name="v18-delete-reason" value="test" checked> <span><b>測試資料</b><small>此筆為系統測試或演練紀錄</small></span></label>
+          <label class="v18-radio"><input type="radio" name="v18-delete-reason" value="mistake"> <span><b>資料誤植</b><small>建立了不正確或重複的 CPR 紀錄</small></span></label>
+          <label class="v18-radio"><input type="radio" name="v18-delete-reason" value="other"> <span><b>其他</b><small>請於下方說明原因</small></span></label>
+          <textarea id="v18-delete-other" class="v18-textarea hidden" placeholder="請說明刪除原因"></textarea>
+        </div>
+        <div class="v18-modal-actions"><button onclick="closeV18DeleteModal()" class="v18-btn-secondary">取消</button><button onclick="submitV18DeleteRequest(this)" class="v18-btn-danger">送出申請</button></div>
+      </div>
+    </div>
+
+    <!-- V18 管理者拒絕刪除申請 Modal -->
+    <div id="v18-reject-modal" class="v18-modal-backdrop hidden">
+      <div class="v18-modal-card">
+        <div class="v18-modal-head"><div><h3>拒絕刪除申請</h3><p>拒絕原因會保留在系統，並寄 Email 給申請人。</p></div><button onclick="closeV18RejectModal()" class="v18-icon-btn"><i class="fa-solid fa-xmark"></i></button></div>
+        <div class="mt-4"><label class="v17-label">拒絕原因 <span class="text-red-500">*</span></label><textarea id="v18-reject-reason" class="v18-textarea" placeholder="請說明為什麼不允許刪除"></textarea></div>
+        <div class="v18-modal-actions"><button onclick="closeV18RejectModal()" class="v18-btn-secondary">取消</button><button onclick="confirmV18Reject(this)" class="v18-btn-danger">確認拒絕並寄信</button></div>
+      </div>
+    </div>
+
+    <!-- V18 CPR 完成使用體驗 Modal -->
+    <div id="v18-rating-modal" class="v18-modal-backdrop hidden">
+      <div class="v18-modal-card text-center">
+        <div class="w-14 h-14 mx-auto rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center text-2xl"><i class="fa-solid fa-check"></i></div>
+        <h3 class="text-xl font-extrabold mt-3">CPR 紀錄已完成</h3>
+        <p class="text-sm text-slate-500 mt-1">請完成本次使用體驗評價</p>
+        <div class="mt-5 font-bold text-slate-700">這次 CPR 紀錄使用體驗如何？</div>
+        <div id="v18-stars" class="v18-stars" aria-label="五星評價"></div>
+        <div id="v18-rating-label" class="text-sm font-extrabold text-amber-600">5 / 5</div>
+        <textarea id="v18-rating-comment" class="v18-textarea mt-4 text-left" placeholder="其他意見建議（選填）"></textarea>
+        <button id="v18-rating-submit" onclick="submitV18Rating(this)" class="v18-btn-primary w-full mt-4">送出</button>
+        <p class="text-[11px] text-slate-400 mt-3">前端不顯示身分；管理者可依本次 CPR 的單位與停止急救員編進行品質改善。</p>
+      </div>
+    </div>
+
+    <!-- V18.1 裝置設定抽屜 -->
     <div id="device-drawer-backdrop" class="v176-drawer-backdrop hidden" onclick="closeDeviceDrawer()"></div>
     <aside id="device-drawer" class="v176-drawer" aria-hidden="true">
         <div class="v176-drawer-header">
@@ -821,9 +870,9 @@
         <div class="v176-warning">急救使用時建議將此裝置預設為「CPR紀錄」。變更單位不會刪除既有 CPR 資料。</div>
     </aside>
 
-        <script src="supabase-config.js?v=17.7.0"></script>
-    <script src="app.js?v=17.7.0"></script>
+        <script src="supabase-config.js?v=18.1.0"></script>
+    <script src="app.js?v=18.1.0"></script>
 
-    <div id="app-version-footer" class="text-center text-[10px] text-slate-400 py-2 select-text">CPRNOTE V17.7｜後台 UI/UX 與帳號申請優化</div>
+    <div id="app-version-footer" class="text-center text-[10px] text-slate-400 py-2 select-text">CPRNOTE V18.1｜Gmail API通知・CPR治理・意見回覆・滿意度</div>
 </body>
 </html>

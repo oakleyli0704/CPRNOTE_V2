@@ -1,5 +1,5 @@
-// CPRNOTE V17.7 - 後台 UI/UX 與帳號申請優化
-const CPRNOTE_APP_VERSION = "17.7.0";
+// CPRNOTE V18.1 - Gmail API通知 / CPR治理 / 使用意見 / 滿意度 / 後台一致性
+const CPRNOTE_APP_VERSION = "18.1.0";
 // CPRNOTE V17.1 - cache refresh build
 // --- 全域變數 ---
         let isRunning = false;
@@ -3148,7 +3148,7 @@ function switchAdminSection(section){
     if(desktopProfile?.role!=='admin') return;
     v17AdminSection=section;
     const root=adminRoot();
-    if(!root){ console.error('V17.7 admin-section-content not found'); return; }
+    if(!root){ console.error('V18.1 admin-section-content not found'); return; }
     document.querySelectorAll('.admin-section-btn').forEach(b=>{
         const active=b.dataset.adminSection===section;
         b.className=`admin-section-btn px-4 py-2 rounded-lg font-bold text-sm ${active?'bg-blue-600 text-white':'bg-slate-100 text-slate-700'}`;
@@ -3163,11 +3163,11 @@ function switchAdminSection(section){
         else if(section==='audit') task=loadAdminAudit();
         else task=loadAdminUnits();
         Promise.resolve(task).catch(err=>{
-            console.error('V17.7 admin load error',err);
+            console.error('V18.1 admin load error',err);
             root.innerHTML=`<div class="bg-red-50 border border-red-200 text-red-700 p-4 rounded-xl font-bold">管理者後台讀取失敗：${escapeHtml(err?.message||String(err))}</div>`;
         });
     } catch(err) {
-        console.error('V17.7 admin switch error',err);
+        console.error('V18.1 admin switch error',err);
         root.innerHTML=`<div class="bg-red-50 border border-red-200 text-red-700 p-4 rounded-xl font-bold">管理者後台讀取失敗：${escapeHtml(err?.message||String(err))}</div>`;
     }
 }
@@ -3337,3 +3337,229 @@ function renderDesktopCaseLists(active, history, latestMap) {
     histEl.innerHTML=history.length?history.map(c=>`<button onclick="openDesktopCase('${c.id}')" class="w-full text-left border rounded-xl p-3 transition ${desktopSelectedCaseId===c.id?'border-blue-500 bg-blue-50':'border-slate-200 hover:border-blue-300 bg-white'}"><div class="flex justify-between items-center gap-2"><span class="font-extrabold text-slate-800">${desktopProfile?.role==='admin'?escapeHtml(v17CaseUnitCode(c))+'｜':''}${escapeHtml(c.bed_no?c.bed_no+'床':'床號未填')}</span><span class="text-[10px] font-bold bg-slate-100 text-slate-600 px-2 py-1 rounded-full">已封存</span></div><div class="text-xs text-slate-500 mt-1">${formatDesktopDate(c.started_at)}</div><div class="text-[11px] text-slate-400 mt-1">${desktopCloseReason(c.close_reason)}</div></button>`).join(''):'<div class="text-sm text-slate-400 text-center py-8">目前沒有歷史紀錄</div>';
 }
 async function openDesktopCase(caseId, silent=false){desktopSelectedCaseId=caseId;const c=desktopCases.find(x=>x.id===caseId);if(!c)return;try{const{data,error}=await supabaseClient.from('cpr_events').select('*').eq('cpr_case_id',caseId).eq('is_deleted',false).order('event_time',{ascending:false});if(error)throw error;desktopEvents=data||[];document.getElementById('desktop-empty-detail').classList.add('hidden');document.getElementById('desktop-case-detail').classList.remove('hidden');document.getElementById('desktop-case-name').innerText=`${v17CaseUnitCode(c)}｜${c.bed_no?c.bed_no+'床':'床號待補'}`;const statusEl=document.getElementById('desktop-case-status');if(c.status==='active'){statusEl.innerText=c.rosc_at?'ROSC後觀察中':'CPR中';statusEl.className=c.rosc_at?'text-xs font-bold px-2 py-1 rounded-full bg-emerald-100 text-emerald-700':'text-xs font-bold px-2 py-1 rounded-full bg-red-100 text-red-700';}else{statusEl.innerText='已封存';statusEl.className='text-xs font-bold px-2 py-1 rounded-full bg-slate-100 text-slate-600';}document.getElementById('desktop-case-meta').innerText=`開始：${formatDesktopDate(c.started_at)}｜紀錄員編：${c.recorder_staff_no||'未填'}${c.ended_at?`｜結束：${formatDesktopDate(c.ended_at)}`:''}`;document.getElementById('desktop-case-duration').dataset.caseId=c.id;document.getElementById('desktop-case-duration').innerText=formatDesktopCaseDuration(c);renderDesktopTimeline();renderDesktopSummaries();if(!silent)renderDesktopCaseLists(desktopCases.filter(x=>x.status==='active'),desktopCases.filter(x=>x.status==='closed'),{});}catch(err){console.error('讀取 CPR 詳細資料失敗',err);}}
+
+/* ============================================================
+   CPRNOTE V18.1
+   CPR 刪除治理 / 使用意見 / 滿意度 / 後台一致性
+   ============================================================ */
+let v18DeletionMap = {};
+let v18DeleteCaseId = null;
+let v18Rating = 5;
+let v18RatingChanged = false;
+let v18RatingContext = null;
+
+function v18ReasonLabel(code,text=''){
+    if(code==='test') return '測試資料';
+    if(code==='mistake') return '資料誤植';
+    return text || '其他';
+}
+function v18StatusLabel(status){
+    return ({pending:'待審核',approved:'已核准待完成',rejected:'已拒絕',completed:'已完成',processing:'處理中',waiting_user:'等待使用者回覆'})[status] || status || '--';
+}
+function v18CategoryLabel(c){return ({operation:'操作問題',feature:'功能建議',system:'系統異常',other:'其他'})[c]||c;}
+function v18StatusBadge(status){return `<span class="v18-status ${escapeHtml(status||'')}">${escapeHtml(v18StatusLabel(status))}</span>`;}
+
+// ---------- V18 導覽：護理長新增使用意見頁 ----------
+function applyDesktopRoleNavigation(view = v17CurrentDesktopView) {
+    const role = desktopProfile?.role || '';
+    const unitBtn=document.getElementById('nav-unit-settings'), adminBtn=document.getElementById('nav-admin'), monitorBtn=document.getElementById('nav-monitor'), feedbackBtn=document.getElementById('nav-feedback');
+    if(unitBtn){const show=role==='head_nurse';unitBtn.classList.toggle('hidden',!show);unitBtn.style.display=show?'':'none';}
+    if(feedbackBtn){const show=role==='head_nurse';feedbackBtn.classList.toggle('hidden',!show);feedbackBtn.style.display=show?'':'none';}
+    if(adminBtn){const show=role==='admin';adminBtn.classList.toggle('hidden',!show);adminBtn.style.display=show?'':'none';}
+    if(monitorBtn) monitorBtn.style.display='';
+    const adminUnitMode=role==='admin'&&!!v17AdminEditingUnit;
+    document.querySelectorAll('.desktop-main-nav').forEach(btn=>{
+        const active=(btn.id==='nav-monitor'&&view==='monitor')||(btn.id==='nav-unit-settings'&&view==='unit'&&role==='head_nurse')||(btn.id==='nav-feedback'&&view==='feedback'&&role==='head_nurse')||(btn.id==='nav-admin'&&(view==='admin'||(view==='unit'&&adminUnitMode)));
+        btn.classList.toggle('bg-blue-600',active);btn.classList.toggle('text-white',active);btn.classList.toggle('bg-slate-800',!active);btn.classList.toggle('text-slate-200',!active);
+    });
+}
+function switchDesktopView(view){
+    const adminUnitMode=desktopProfile?.role==='admin'&&!!v17AdminEditingUnit;
+    if(view==='unit'&&!(desktopProfile?.role==='head_nurse'||adminUnitMode))return;
+    if(view==='feedback'&&desktopProfile?.role!=='head_nurse')return;
+    if(view==='admin'&&desktopProfile?.role!=='admin')return;
+    v17CurrentDesktopView=view;
+    const ids={monitor:'desktop-monitor-panel',unit:'desktop-unit-settings-panel',feedback:'desktop-feedback-panel',admin:'desktop-admin-panel'};
+    Object.entries(ids).forEach(([k,id])=>{const el=document.getElementById(id);if(!el)return;const show=k===view;el.classList.toggle('hidden',!show);el.style.display=show?'':'none';});
+    applyDesktopRoleNavigation(view);
+    if(view==='unit')loadHeadNurseSettings();
+    if(view==='feedback')loadHeadNurseFeedback();
+    if(view==='admin')requestAnimationFrame(()=>switchAdminSection(v17AdminSection||'units'));
+}
+
+// ---------- V18 歷史 CPR：排除完成刪除資料 + 護理長刪除申請 ----------
+async function queryDesktopCases(status){
+    let q=supabaseClient.from('cpr_cases').select('id,unit_id,client_case_key,bed_no,recorder_staff_no,started_at,rosc_at,ended_at,status,close_reason,runtime_state,updated_at,soft_deleted,units(code,name)').eq('status',status).eq('soft_deleted',false).order('started_at',{ascending:false}).limit(status==='active'?100:1000);
+    if(desktopProfile.role!=='admin'&&desktopProfile.unit_id)q=q.eq('unit_id',desktopProfile.unit_id);
+    if(desktopProfile.role==='unit'&&status==='closed')q=q.gte('started_at',new Date(Date.now()-3*24*60*60*1000).toISOString());
+    const{data,error}=await q;if(error)throw error;return data||[];
+}
+async function refreshDesktopDashboard(showFeedback=false){
+    if(!desktopProfile)return;
+    try{
+        const[active,history]=await Promise.all([queryDesktopCases('active'),queryDesktopCases('closed')]);
+        desktopCases=[...active,...history];let latestMap={};
+        if(active.length){const{data:evs}=await supabaseClient.from('cpr_events').select('cpr_case_id,event_time,action,detail').in('cpr_case_id',active.map(x=>x.id)).eq('is_deleted',false).order('event_time',{ascending:false});(evs||[]).forEach(e=>{if(!latestMap[e.cpr_case_id])latestMap[e.cpr_case_id]=e;});}
+        v18DeletionMap={};
+        if(desktopProfile.role==='head_nurse'&&history.length){const{data:reqs}=await supabaseClient.from('cpr_deletion_requests').select('*').in('cpr_case_id',history.map(x=>x.id)).order('created_at',{ascending:false});(reqs||[]).forEach(r=>{if(!v18DeletionMap[r.cpr_case_id])v18DeletionMap[r.cpr_case_id]=r;});}
+        renderDesktopCaseLists(active,history,latestMap);
+        if(desktopSelectedCaseId&&desktopCases.some(x=>x.id===desktopSelectedCaseId))await openDesktopCase(desktopSelectedCaseId,true);
+        const sync=document.getElementById('desktop-last-sync');if(sync)sync.innerText=new Date().toLocaleString('zh-TW',{hour12:false});
+        if(showFeedback)desktopFlashLiveBadge('已更新');
+    }catch(err){console.error('Dashboard 更新失敗',err);desktopFlashLiveBadge('同步異常',true);}
+}
+function renderDesktopCaseLists(active,history,latestMap){
+    document.getElementById('desktop-active-count').innerText=active.length;
+    const activeEl=document.getElementById('desktop-active-list');
+    activeEl.innerHTML=active.length?active.map(c=>{const latest=latestMap[c.id],unit=v17CaseUnitCode(c);return `<button onclick="openDesktopCase('${c.id}')" class="w-full text-left border rounded-xl p-3 transition ${desktopSelectedCaseId===c.id?'border-blue-500 bg-blue-50':'border-slate-200 hover:border-blue-300 bg-white'}"><div class="flex justify-between items-center gap-2"><span class="font-extrabold text-slate-900">${desktopProfile?.role==='admin'?escapeHtml(unit)+'｜':''}${escapeHtml(c.bed_no?c.bed_no+'床':'床號待補')}</span><span class="text-[10px] font-bold bg-red-100 text-red-700 px-2 py-1 rounded-full">CPR中</span></div><div class="text-xs text-slate-500 mt-1">開始 ${formatDesktopDate(c.started_at)}</div><div class="text-sm mt-2 truncate ${latest?'text-slate-700':'text-slate-400'}">${latest?`最新：${escapeHtml(latest.action)}｜${escapeHtml(latest.detail||'')}`:'尚無處置紀錄'}</div></button>`}).join(''):'<div class="text-sm text-slate-400 text-center py-8">目前沒有進行中的 CPR</div>';
+    const histEl=document.getElementById('desktop-history-list');
+    histEl.innerHTML=history.length?history.map(c=>{const req=v18DeletionMap[c.id];const canRequest=desktopProfile?.role==='head_nurse'&&!req;return `<div class="v18-history-card ${desktopSelectedCaseId===c.id?'selected':''}"><button onclick="openDesktopCase('${c.id}')" class="w-full text-left"><div class="flex justify-between items-center gap-2"><span class="font-extrabold text-slate-800">${desktopProfile?.role==='admin'?escapeHtml(v17CaseUnitCode(c))+'｜':''}${escapeHtml(c.bed_no?c.bed_no+'床':'床號未填')}</span><span class="text-[10px] font-bold bg-slate-100 text-slate-600 px-2 py-1 rounded-full">已封存</span></div><div class="text-xs text-slate-500 mt-1">${formatDesktopDate(c.started_at)}</div><div class="text-[11px] text-slate-400 mt-1">${desktopCloseReason(c.close_reason)}</div></button>${desktopProfile?.role==='head_nurse'?`<div class="v18-history-actions">${req?v18StatusBadge(req.status):''}${canRequest?`<button onclick="openV18DeleteModal('${c.id}')" class="v18-small-btn v18-delete-btn"><i class="fa-solid fa-trash-can mr-1"></i>申請刪除</button>`:''}</div>`:''}</div>`}).join(''):'<div class="text-sm text-slate-400 text-center py-8">目前沒有歷史紀錄</div>';
+}
+function openV18DeleteModal(caseId){
+    const c=desktopCases.find(x=>x.id===caseId);if(!c)return;
+    v18DeleteCaseId=caseId;document.getElementById('v18-delete-case-meta').innerText=`${v17CaseUnitCode(c)}｜${c.bed_no?c.bed_no+'床':'床號未填'}｜開始 ${formatDesktopDate(c.started_at)}`;
+    document.querySelector('input[name="v18-delete-reason"][value="test"]').checked=true;document.getElementById('v18-delete-other').value='';document.getElementById('v18-delete-other').classList.add('hidden');
+    document.getElementById('v18-delete-modal').classList.remove('hidden');
+}
+function closeV18DeleteModal(){document.getElementById('v18-delete-modal').classList.add('hidden');v18DeleteCaseId=null;}
+document.addEventListener('change',e=>{if(e.target?.name==='v18-delete-reason'){document.getElementById('v18-delete-other')?.classList.toggle('hidden',e.target.value!=='other');}});
+async function submitV18DeleteRequest(btn){
+    if(!v18DeleteCaseId)return;const reason=document.querySelector('input[name="v18-delete-reason"]:checked')?.value||'test',text=document.getElementById('v18-delete-other').value.trim();if(reason==='other'&&!text)return alertV17('請填寫其他刪除原因',true);
+    setV17ButtonBusy(btn,true,'送出中...');try{const{error}=await supabaseClient.rpc('request_cpr_deletion',{p_case_id:v18DeleteCaseId,p_reason_code:reason,p_reason_text:text||null});if(error)throw error;closeV18DeleteModal();alertV17('刪除申請已送出，等待管理者審核');await refreshDesktopDashboard(false);}catch(e){alertV17(`送出失敗：${e.message}`,true);}finally{setV17ButtonBusy(btn,false);}
+}
+
+// ---------- V18 護理長使用意見 ----------
+async function loadHeadNurseFeedback(){
+    const root=document.getElementById('head-nurse-feedback-content');if(!root)return;root.innerHTML='<div class="text-center text-slate-400 py-10">讀取中...</div>';
+    const[tr,mr]=await Promise.all([supabaseClient.from('feedback_threads').select('*,units(code)').order('updated_at',{ascending:false}),supabaseClient.from('feedback_messages').select('*').order('created_at')]);
+    if(tr.error)return root.innerHTML=`<div class="text-red-600">${escapeHtml(tr.error.message)}</div>`;
+    const msgs=mr.data||[];
+    root.innerHTML=`<section class="v18-card p-5"><h3 class="font-extrabold text-lg mb-3">新增使用意見</h3><div class="v17-form-grid v17-grid-2"><div class="v17-field"><label class="v17-label">意見類型</label><select id="v18-feedback-category" class="v17-input"><option value="operation">操作問題</option><option value="feature">功能建議</option><option value="system">系統異常</option><option value="other">其他</option></select></div><div class="v17-field"><label class="v17-label">目前版本</label><input class="v17-input" value="V${CPRNOTE_APP_VERSION}" disabled></div></div><div class="v17-field mt-3"><label class="v17-label">意見內容</label><textarea id="v18-feedback-message" class="v18-textarea" placeholder="請說明您的問題或建議"></textarea></div><div class="v17-actions"><button onclick="submitV18Feedback(this)" class="v17-btn v17-btn-primary"><i class="fa-solid fa-paper-plane"></i>送出意見</button></div></section>${renderV18Threads(tr.data||[],msgs,false)}`;
+}
+async function submitV18Feedback(btn){const category=document.getElementById('v18-feedback-category').value,msg=document.getElementById('v18-feedback-message').value.trim();if(!msg)return alertV17('請輸入意見內容',true);setV17ButtonBusy(btn,true,'送出中...');try{const{error}=await supabaseClient.rpc('create_feedback_thread',{p_category:category,p_message:msg,p_app_version:`V${CPRNOTE_APP_VERSION}`});if(error)throw error;alertV17('使用意見已送出');await loadHeadNurseFeedback();}catch(e){alertV17(e.message,true);}finally{setV17ButtonBusy(btn,false);}}
+function renderV18Threads(threads,msgs,isAdmin){
+    if(!threads.length)return '<section class="v18-card p-5 text-center text-slate-400">目前沒有使用意見</section>';
+    return `<div class="space-y-4">${threads.map(t=>{const tm=msgs.filter(m=>m.thread_id===t.id);return `<article class="v18-thread"><div class="v18-thread-head"><div><div class="font-extrabold text-slate-800">${isAdmin?`${escapeHtml(t.units?.code||'')}｜`:''}${escapeHtml(v18CategoryLabel(t.category))}</div><div class="text-xs text-slate-400 mt-1">提出版本 ${escapeHtml(t.app_version||'--')}｜建立 ${formatDesktopDate(t.created_at)}｜最後更新 ${formatDesktopDate(t.updated_at)}${t.completed_version?`｜完成版本 ${escapeHtml(t.completed_version)}`:''}</div></div>${v18StatusBadge(t.status)}</div><div class="v18-message-list">${tm.map(m=>`<div class="v18-message ${m.sender_role==='admin'?'admin':'mine'}"><div class="v18-message-meta">${escapeHtml(m.sender_name)}｜${formatDesktopDate(m.created_at)}</div>${escapeHtml(m.message)}</div>`).join('')}</div>${t.status!=='completed'?`<div class="v18-reply-row"><textarea id="v18-reply-${t.id}" class="v18-textarea" placeholder="輸入回覆內容"></textarea>${isAdmin?`<div class="flex flex-col gap-2 min-w-[150px]"><button onclick="replyV18Feedback('${t.id}','waiting_user',this)" class="v18-btn-primary">回覆</button><input id="v18-complete-version-${t.id}" class="v17-input text-sm" value="V18.1" placeholder="完成版本"><button onclick="completeV18Feedback('${t.id}',this)" class="v18-btn-success">完成</button></div>`:`<button onclick="replyV18Feedback('${t.id}','processing',this)" class="v18-btn-primary">送出回覆</button>`}</div>`:''}</article>`}).join('')}</div>`;
+}
+async function replyV18Feedback(threadId,status,btn){const el=document.getElementById(`v18-reply-${threadId}`),message=el?.value.trim();if(!message)return alertV17('請輸入回覆內容',true);setV17ButtonBusy(btn,true,'傳送中...');try{await invokeV17UserAdmin({action:'reply_feedback',threadId,message,status});alertV17('回覆已送出');desktopProfile.role==='admin'?await loadAdminFeedback():await loadHeadNurseFeedback();}catch(e){alertV17(e.message,true);}finally{setV17ButtonBusy(btn,false);}}
+function completeV18Feedback(threadId,btn){const message=document.getElementById(`v18-reply-${threadId}`)?.value.trim();const version=document.getElementById(`v18-complete-version-${threadId}`)?.value.trim();if(!message)return alertV17('完成前請在回覆框填寫完成說明',true);if(!version)return alertV17('請填寫完成版本',true);showActionToast({title:'完成使用意見',message:`完成版本：${escapeHtml(version)}。確認後會將完成說明寄 Email 給提出者。`,leftText:'取消',rightText:'確認完成',rightAction:()=>replyV18FeedbackComplete(threadId,message,version,btn)});}
+async function replyV18FeedbackComplete(threadId,message,version,btn){setV17ButtonBusy(btn,true,'完成中...');try{await invokeV17UserAdmin({action:'reply_feedback',threadId,message,status:'completed',completedVersion:version});alertV17('已完成並寄送 Email 通知');await loadAdminFeedback();}catch(e){alertV17(e.message,true);}finally{setV17ButtonBusy(btn,false);}}
+
+// ---------- V18 管理者新頁面 ----------
+function switchAdminSection(section){
+    if(desktopProfile?.role!=='admin')return;v17AdminSection=section;const root=adminRoot();if(!root)return;
+    document.querySelectorAll('.admin-section-btn').forEach(b=>{const a=b.dataset.adminSection===section;b.className=`admin-section-btn px-4 py-2 rounded-lg font-bold text-sm whitespace-nowrap ${a?'bg-blue-600 text-white':'bg-slate-100 text-slate-700'}`;});
+    try{let task;if(section==='units')task=loadAdminUnits();else if(section==='headnurses')task=loadAdminHeadNurses();else if(section==='medications')task=loadAdminMedications();else if(section==='rhythms')task=loadAdminRhythms();else if(section==='tubes')task=loadAdminTubesBlood();else if(section==='deletions')task=loadAdminDeletionRequests();else if(section==='feedback')task=loadAdminFeedback();else if(section==='ratings')task=loadAdminRatings();else if(section==='audit')task=loadAdminAudit();else task=loadAdminUnits();Promise.resolve(task).catch(err=>{root.innerHTML=`<div class="bg-red-50 text-red-700 p-4 rounded-xl font-bold">讀取失敗：${escapeHtml(err?.message||String(err))}</div>`;});}catch(err){root.innerHTML=`<div class="bg-red-50 text-red-700 p-4 rounded-xl font-bold">讀取失敗：${escapeHtml(err?.message||String(err))}</div>`;}
+}
+async function loadAdminDeletionRequests(){
+    const root=adminRoot();root.innerHTML='<div class="text-center text-slate-400 py-10">讀取中...</div>';
+    const{data,error}=await supabaseClient.from('cpr_deletion_requests').select('*,units(code),profiles!cpr_deletion_requests_requested_by_fkey(display_name,username,contact_email),cpr_cases(bed_no,started_at)').order('created_at',{ascending:false});
+    if(error){ // 若 FK 別名無法推導，改用分開查詢
+        const rr=await supabaseClient.from('cpr_deletion_requests').select('*').order('created_at',{ascending:false});if(rr.error)return root.innerHTML=`<div class="text-red-600">${escapeHtml(rr.error.message)}</div>`;return renderAdminDeletionFallback(rr.data||[]);
+    }
+    renderAdminDeletionRows(data||[]);
+}
+async function renderAdminDeletionFallback(rows){const root=adminRoot();const[ur,pr,cr]=await Promise.all([supabaseClient.from('units').select('id,code'),supabaseClient.from('profiles').select('user_id,display_name,username,contact_email'),supabaseClient.from('cpr_cases').select('id,bed_no,started_at')]);const um=Object.fromEntries((ur.data||[]).map(x=>[x.id,x])),pm=Object.fromEntries((pr.data||[]).map(x=>[x.user_id,x])),cm=Object.fromEntries((cr.data||[]).map(x=>[x.id,x]));renderAdminDeletionRows(rows.map(r=>({...r,units:um[r.unit_id],profiles:pm[r.requested_by],cpr_cases:cm[r.cpr_case_id]})));}
+function renderAdminDeletionRows(rows){const root=adminRoot();const counts={pending:0,approved:0,rejected:0,completed:0};rows.forEach(r=>counts[r.status]=(counts[r.status]||0)+1);root.innerHTML=`<div class="v18-kpis"><div class="v18-kpi"><div class="v18-kpi-label">待審核</div><div class="v18-kpi-value">${counts.pending}</div></div><div class="v18-kpi"><div class="v18-kpi-label">已核准待完成</div><div class="v18-kpi-value">${counts.approved}</div></div><div class="v18-kpi"><div class="v18-kpi-label">已拒絕</div><div class="v18-kpi-value">${counts.rejected}</div></div><div class="v18-kpi"><div class="v18-kpi-label">已完成</div><div class="v18-kpi-value">${counts.completed}</div></div></div><section class="v18-card p-5 mt-5"><h2 class="font-extrabold text-lg mb-3">CPR 紀錄刪除申請</h2><div class="space-y-3">${rows.length?rows.map(r=>`<div class="v17-subcard"><div class="flex justify-between gap-3 flex-wrap"><div><div class="font-extrabold text-slate-800">${escapeHtml(r.units?.code||'--')}｜${escapeHtml(r.cpr_cases?.bed_no?r.cpr_cases.bed_no+'床':'床號未填')}</div><div class="text-sm text-slate-500 mt-1">開始：${formatDesktopDate(r.cpr_cases?.started_at)}｜申請人：${escapeHtml(r.profiles?.display_name||r.profiles?.username||'--')}</div><div class="text-sm text-slate-600 mt-2">原因：${escapeHtml(v18ReasonLabel(r.reason_code,r.reason_text))}</div>${r.reject_reason?`<div class="text-sm text-red-600 mt-1">拒絕原因：${escapeHtml(r.reject_reason)}</div>`:''}<div class="text-xs text-slate-400 mt-1">申請 ${formatDesktopDate(r.created_at)}${r.completed_at?`｜完成 ${formatDesktopDate(r.completed_at)}`:''}</div></div><div class="flex items-start gap-2 flex-wrap">${v18StatusBadge(r.status)}${r.status==='pending'?`<button onclick="approveV18Delete('${r.id}',this)" class="v18-small-btn bg-emerald-600 text-white">通過</button><button onclick="rejectV18Delete('${r.id}',this)" class="v18-small-btn bg-red-600 text-white">拒絕</button>`:''}${r.status==='approved'?`<button onclick="completeV18Delete('${r.id}',this)" class="v18-small-btn bg-blue-600 text-white">完成刪除</button>`:''}</div></div></div>`).join(''):'<div class="text-center text-slate-400 py-8">目前沒有刪除申請</div>'}</div></section>`;}
+async function approveV18Delete(id,btn){setV17ButtonBusy(btn,true,'處理中...');try{await invokeV17UserAdmin({action:'process_delete_request',requestId:id,decision:'approve'});alertV17('已核准，尚未刪除；請確認後再按「完成刪除」');await loadAdminDeletionRequests();}catch(e){alertV17(e.message,true);}finally{setV17ButtonBusy(btn,false);}}
+let v18RejectRequestId=null;
+function rejectV18Delete(id,btn){v18RejectRequestId=id;document.getElementById('v18-reject-reason').value='';document.getElementById('v18-reject-modal').classList.remove('hidden');}
+function closeV18RejectModal(){document.getElementById('v18-reject-modal').classList.add('hidden');v18RejectRequestId=null;}
+async function confirmV18Reject(btn){const reason=document.getElementById('v18-reject-reason').value.trim();if(!reason)return alertV17('拒絕時必須填寫原因',true);const id=v18RejectRequestId;setV17ButtonBusy(btn,true,'處理中...');try{await invokeV17UserAdmin({action:'process_delete_request',requestId:id,decision:'reject',reason});closeV18RejectModal();alertV17('已拒絕並寄送 Email 通知');await loadAdminDeletionRequests();}catch(e){alertV17(e.message,true);}finally{setV17ButtonBusy(btn,false);}}
+function completeV18Delete(id,btn){showActionToast({title:'完成刪除',message:'確認後，這筆 CPR 將從一般歷史紀錄隱藏，稽核紀錄仍永久保留，並寄 Email 通知申請人。',leftText:'取消',rightText:'確認完成',danger:true,rightAction:()=>processV18Delete(id,'complete','',btn)});}
+async function processV18Delete(id,decision,reason,btn){setV17ButtonBusy(btn,true,'處理中...');try{const res=await invokeV17UserAdmin({action:'process_delete_request',requestId:id,decision,reason});alertV17(decision==='reject'?'已拒絕並寄送 Email 通知':'刪除已完成並寄送 Email 通知');await loadAdminDeletionRequests();await refreshDesktopDashboard(false);}catch(e){alertV17(e.message,true);}finally{setV17ButtonBusy(btn,false);}}
+
+async function loadAdminFeedback(){const root=adminRoot();root.innerHTML='<div class="text-center text-slate-400 py-10">讀取中...</div>';const[tr,mr,nr]=await Promise.all([supabaseClient.from('feedback_threads').select('*,units(code)').order('updated_at',{ascending:false}),supabaseClient.from('feedback_messages').select('*').order('created_at'),supabaseClient.from('notification_logs').select('*').in('notification_type',['feedback_reply','feedback_completed']).order('created_at',{ascending:false}).limit(30)]);if(tr.error)return root.innerHTML=`<div class="text-red-600">${escapeHtml(tr.error.message)}</div>`;const threads=tr.data||[],counts={pending:0,processing:0,waiting_user:0,completed:0};threads.forEach(t=>counts[t.status]=(counts[t.status]||0)+1);root.innerHTML=`<div class="v18-kpis"><div class="v18-kpi"><div class="v18-kpi-label">待處理</div><div class="v18-kpi-value">${counts.pending}</div></div><div class="v18-kpi"><div class="v18-kpi-label">處理中</div><div class="v18-kpi-value">${counts.processing}</div></div><div class="v18-kpi"><div class="v18-kpi-label">等待使用者回覆</div><div class="v18-kpi-value">${counts.waiting_user}</div></div><div class="v18-kpi"><div class="v18-kpi-label">已完成</div><div class="v18-kpi-value">${counts.completed}</div></div></div><section class="mt-5">${renderV18Threads(threads,mr.data||[],true)}</section><section class="v18-card p-5 mt-5"><h3 class="font-extrabold mb-3">最近 Email 通知</h3>${renderV18Notifications(nr.data||[])}</section>`;}
+function renderV18Notifications(list){if(!list.length)return '<div class="text-sm text-slate-400">尚無通知紀錄</div>';return `<div class="space-y-2">${list.map(n=>`<div class="flex justify-between gap-3 border-b border-slate-100 pb-2 text-sm"><div><b>${escapeHtml(n.subject||n.notification_type)}</b><div class="text-xs text-slate-400">${escapeHtml((n.recipient_email||'').replace(/^(.{2}).*(@.*)$/,'$1***$2'))}｜${formatDesktopDate(n.created_at)}</div>${n.error_message?`<div class="text-xs text-red-600">${escapeHtml(n.error_message)}</div>`:''}</div><span class="${n.status==='sent'?'text-emerald-600':'text-red-600'} font-bold">${n.status==='sent'?'寄送成功':'寄送失敗'}</span></div>`).join('')}</div>`;}
+
+async function loadAdminRatings(){const root=adminRoot();root.innerHTML='<div class="text-center text-slate-400 py-10">讀取中...</div>';const{data,error}=await supabaseClient.from('cpr_experience_ratings').select('*,units(code)').order('submitted_at',{ascending:false}).limit(500);if(error)return root.innerHTML=`<div class="text-red-600">${escapeHtml(error.message)}</div>`;const list=data||[],avg=list.length?(list.reduce((a,x)=>a+Number(x.rating||0),0)/list.length):0,changed5=list.filter(x=>x.rating===5&&x.rating_changed).length,default5=list.filter(x=>x.rating===5&&!x.rating_changed).length;root.innerHTML=`<div class="v18-kpis"><div class="v18-kpi"><div class="v18-kpi-label">平均滿意度</div><div class="v18-kpi-value">${avg.toFixed(1)} / 5</div></div><div class="v18-kpi"><div class="v18-kpi-label">回饋筆數</div><div class="v18-kpi-value">${list.length}</div></div><div class="v18-kpi"><div class="v18-kpi-label">主動選擇 5 星</div><div class="v18-kpi-value">${changed5}</div></div><div class="v18-kpi"><div class="v18-kpi-label">預設 5 星直接送出</div><div class="v18-kpi-value">${default5}</div></div></div><section class="v18-card p-5 mt-5"><h2 class="font-extrabold text-lg mb-3">CPR 使用體驗</h2><div class="space-y-2">${list.length?list.map(x=>`<div class="v17-subcard"><div class="flex justify-between gap-3 flex-wrap"><div><div class="font-extrabold">${'★'.repeat(x.rating)}${'☆'.repeat(5-x.rating)} <span class="text-sm text-slate-500">${x.rating}/5</span></div><div class="text-sm text-slate-600 mt-1">單位：${escapeHtml(x.units?.code||'--')}｜停止 CPR 員編：${escapeHtml(x.recorder_staff_no||'未填')}｜版本：${escapeHtml(x.app_version||'--')}</div>${x.comment?`<div class="text-sm text-slate-700 mt-2 bg-slate-50 rounded-lg p-2">${escapeHtml(x.comment)}</div>`:''}</div><div class="text-xs text-slate-400">${formatDesktopDate(x.submitted_at)}</div></div></div>`).join(''):'<div class="text-center text-slate-400 py-8">尚無使用體驗資料</div>'}</div></section>`;}
+
+// ---------- V18 CPR 完成後五星評價（無「稍後再說」） ----------
+function renderV18Stars(){const box=document.getElementById('v18-stars');if(!box)return;box.innerHTML=[1,2,3,4,5].map(i=>`<button type="button" class="v18-star ${i<=v18Rating?'':'off'}" onclick="setV18Rating(${i})">★</button>`).join('');document.getElementById('v18-rating-label').innerText=`${v18Rating} / 5`;}
+function setV18Rating(n){v18Rating=n;v18RatingChanged=true;renderV18Stars();}
+function openV18RatingModal(ctx){v18RatingContext=ctx;v18Rating=5;v18RatingChanged=false;document.getElementById('v18-rating-comment').value='';renderV18Stars();document.getElementById('v18-rating-modal').classList.remove('hidden');}
+async function submitV18Rating(btn){if(!v18RatingContext?.caseId)return;setV17ButtonBusy(btn,true,'送出中...');try{const{error}=await supabaseClient.rpc('submit_cpr_experience',{p_case_id:v18RatingContext.caseId,p_rating:v18Rating,p_comment:document.getElementById('v18-rating-comment').value.trim()||null,p_rating_changed:v18RatingChanged,p_app_version:`V${CPRNOTE_APP_VERSION}`});if(error)throw error;document.getElementById('v18-rating-modal').classList.add('hidden');const bed=v18RatingContext.bed;v18RatingContext=null;resetForNewCPR();showToast(`本次 CPR 已完成並送出使用體驗${bed?`｜${bed}床`:''}`);}catch(e){alertV17(`使用體驗送出失敗：${e.message}`,true);}finally{setV17ButtonBusy(btn,false);}}
+async function confirmStopCPR(){
+    if(!canEditCurrentCase())return;const bed=document.getElementById('stop-bed-input').value.trim(),nurse=document.getElementById('stop-nurse-input').value.trim();if(!bed)return showToast('請輸入床號',true);if(!nurse)return showToast('請輸入紀錄護理師員編',true);
+    currentBed=bed;currentNurseId=nurse;cprEndedAtMs=Date.now();cprEndTime=new Date(cprEndedAtMs).toTimeString().substring(0,8);addLocalEvent('系統',`⛔ 停止急救｜${deviceUnit} ${currentBed}床｜紀錄護理師員編 ${currentNurseId}`,{kind:'stop_cpr'},false);
+    isRunning=false;isTotalTimerRunning=false;clearInterval(timerInterval);stopCprAlarm();stopEpiAlarm();releaseWakeLock();cprTargetTimeMs=0;epiTargetTimeMs=0;
+    const caseId=cloudCaseId||await startCloudCaseIfNeeded();await flushPendingEvents();if(caseId){try{const{error}=await supabaseClient.rpc('device_stop_cpr',{p_device_key:deviceId,p_case_id:caseId,p_bed_no:currentBed,p_recorder_staff_no:currentNurseId});if(error)throw error;setCloudStatus('synced');}catch(err){console.warn('停止急救將於網路恢復後補同步',err);queueFinalizationOp({type:'stopCase',cloudCaseId:caseId,bed:currentBed,nurse:currentNurseId,unsyncedEvents:events.filter(e=>!e.cloudId)});setCloudStatus(navigator.onLine?'pending':'offline','待同步');}}
+    caseLocked=true;archiveCurrentCase('手動停止急救');closeModal();if(caseId)openV18RatingModal({caseId,bed:currentBed,nurse:currentNurseId,unit:deviceUnit});else{showToast('CPR 已封存，但目前無法建立評價資料；請確認網路後再測試',true);resetForNewCPR();}
+}
+
+// ---------- V18 Pump 標題兩行：欄位輸入框保持底部對齊 ----------
+function renderHNMedCard(m,s={}){const epi=m.system_key==='epinephrine',visible=epi||s.is_visible!==false,quick=Array.isArray(s.quick_qty)?s.quick_qty.join(','):'1',globalPump=m.pump_default_value??0,hasOverride=s.pump_default_value_override!=null,pumpValue=hasOverride?s.pump_default_value_override:globalPump,sortValue=epi?1:(s.sort_order??m.global_sort??100),adminMode=isV17AdminUnitEditing();return `<div class="v17-subcard ${visible?'':'v177-card-off'}" data-v177-med="${m.id}" data-dirty="0"><div class="v17-status-line"><div><div class="flex items-center gap-2 flex-wrap"><span class="v17-sort-badge">${sortValue}</span><div class="font-extrabold text-slate-800">${escapeHtml(m.name)}</div>${epi?'<span class="text-[10px] bg-red-100 text-red-700 px-2 py-1 rounded-full font-bold">固定第一</span>':''}</div><div class="text-xs text-slate-400 mt-1">${escapeHtml(m.generic_name||'')}${m.has_pump?`｜Pump ${m.pump_min_qty}支以上`:''}</div>${adminMode?`<div class="text-[11px] text-blue-600 mt-1">全院預設：${m.default_qty??1} 支${m.has_pump?`｜Pump ${globalPump} ${escapeHtml(m.pump_unit||'')}`:''}</div>`:''}</div>${renderV17Toggle(`hn-med-visible-${m.id}`,visible,'顯示',epi,epi?'':`onchange="v177ToggleCard(this,'med','${m.id}')"`)}</div><div class="v17-form-grid mt-3"><div class="v17-field"><div class="v18-pump-title"><label class="v17-label">預設支數</label></div><input id="hn-med-qty-${m.id}" type="number" step="0.5" class="v17-input" value="${s.default_qty??m.default_qty??1}"></div><div class="v17-field"><div class="v18-pump-title"><label class="v17-label">快速選擇（逗號分隔）</label></div><input id="hn-med-quick-${m.id}" class="v17-input" value="${escapeHtml(quick)}" placeholder="1,2,6"></div><div class="v17-field"><div class="v18-pump-title"><label class="v17-label">排序</label></div><input id="hn-med-sort-${m.id}" type="number" class="v17-input" value="${sortValue}" ${epi?'disabled':''}></div>${m.has_pump?`<div class="v17-field"><div class="v18-pump-title"><label class="v17-label">Pump 預設值（${escapeHtml(m.pump_unit||'滴/分')}）</label><button type="button" onclick="v177UseGlobalPump('${m.id}',${Number(globalPump)||0})" class="v18-pump-link">${hasOverride?'使用全院預設':'✓ 使用全院預設'} ${globalPump}</button></div><input id="hn-med-pump-${m.id}" data-pump-mode="${hasOverride?'override':'global'}" type="number" step="0.1" class="v17-input" value="${pumpValue}"></div>`:''}</div>${visible?'':'<div class="v177-off-note">目前不在 CPR 畫面顯示</div>'}</div>`;}
+
+// ---------- V18 管理者：管路欄位改為可視化，不再編輯 JSON；同類別批次儲存 ----------
+function v18FieldRows(t){const fields=Array.isArray(t.field_schema)?t.field_schema:[];return fields.map((f,i)=>`<div class="v18-field-schema" data-schema-row><input data-key value="${escapeHtml(f.key||'')}" placeholder="欄位代碼"><input data-label value="${escapeHtml(f.label||'')}" placeholder="顯示名稱"><select data-type><option value="text" ${f.type==='text'?'selected':''}>文字</option><option value="number" ${f.type==='number'?'selected':''}>數字</option></select><button type="button" onclick="this.closest('[data-schema-row]').remove();v18MarkAdminCard(this)" class="v18-remove-field"><i class="fa-solid fa-trash"></i></button></div>`).join('');}
+function v18AddTubeField(id){const box=document.getElementById(`v18-tube-fields-${id}`);if(!box)return;const row=document.createElement('div');row.className='v18-field-schema';row.dataset.schemaRow='';row.innerHTML='<input data-key placeholder="欄位代碼，例如 depth_cm"><input data-label placeholder="顯示名稱，例如 固定深度(cm)"><select data-type><option value="text">文字</option><option value="number">數字</option></select><button type="button" class="v18-remove-field" onclick="this.closest(\'[data-schema-row]\').remove();v18MarkAdminCard(this)"><i class="fa-solid fa-trash"></i></button>';box.appendChild(row);v18MarkAdminCard(box);}
+function v18MarkAdminCard(el){const card=el.closest?.('[data-v18-dirty]');if(card)card.dataset.v18Dirty='1';const c=document.getElementById('v18-admin-unsaved');if(c){const n=document.querySelectorAll('[data-v18-dirty="1"]').length;c.textContent=n?`${n} 項尚未儲存`:'已全部儲存';}}
+async function loadAdminTubesBlood(){const root=adminRoot();const[tr,br]=await Promise.all([supabaseClient.from('tube_types').select('*').order('sort_order').order('name'),supabaseClient.from('blood_products').select('*').order('sort_order').order('name')]);const tubes=tr.data||[],blood=br.data||[];v17NextTubeSort=(tubes.reduce((m,x)=>Math.max(m,Number(x.sort_order)||0),0)||0)+1;v17NextBloodSort=(blood.reduce((m,x)=>Math.max(m,Number(x.sort_order)||0),0)||0)+1;root.innerHTML=`<section class="v17-card p-5"><h2 class="font-extrabold text-lg mb-3">新增管路類別</h2><div class="v17-form-grid"><div class="v17-field"><label class="v17-label">代碼</label><input id="admin-tube-code" class="v17-input" placeholder="例如 aline"></div><div class="v17-field"><label class="v17-label">顯示名稱</label><input id="admin-tube-name" class="v17-input" placeholder="例如 A-line"></div><div class="v17-field"><label class="v17-label">排序</label><input id="admin-tube-sort" type="number" class="v17-input" value="${v17NextTubeSort}"></div><div class="v17-field"><button onclick="adminAddTube()" class="v17-btn v17-btn-primary w-full">＋ 新增管路</button></div></div></section><section class="v17-card p-5"><div class="v177-section-head"><div><h2 class="font-extrabold text-lg">管路主檔</h2><div id="v18-admin-unsaved" class="v18-unsaved">已全部儲存</div></div><button onclick="saveAllV18Tubes(this)" class="v17-btn v17-btn-primary">儲存管路設定</button></div><div class="space-y-3 mt-3">${tubes.map(t=>`<div class="v17-subcard" data-v18-dirty="0" data-v18-tube="${t.id}"><div class="v17-form-grid"><div class="v17-field"><label class="v17-label">名稱</label><input id="tube-name-${t.id}" class="v17-input" value="${escapeHtml(t.name)}"></div><div class="v17-field"><label class="v17-label">排序</label><input id="tube-sort-${t.id}" type="number" class="v17-input" value="${t.sort_order}"></div><div class="v17-field">${renderV17Toggle(`tube-active-${t.id}`,t.is_active,'啟用')}</div></div><div class="mt-3"><div class="flex justify-between items-center"><label class="v17-label">管路紀錄欄位</label><button onclick="v18AddTubeField('${t.id}')" class="v18-small-btn bg-blue-50 text-blue-700">＋ 新增欄位</button></div><div id="v18-tube-fields-${t.id}">${v18FieldRows(t)}</div></div></div>`).join('')}</div></section><section class="v17-card p-5"><div class="v177-section-head"><div><h2 class="font-extrabold text-lg">血品主檔</h2><div id="v18-blood-unsaved" class="v18-unsaved">已全部儲存</div></div><button onclick="saveAllV18Blood(this)" class="v17-btn v17-btn-primary">儲存血品設定</button></div><div class="v17-form-grid mt-3 mb-4"><div class="v17-field"><label class="v17-label">代碼</label><input id="admin-blood-code" class="v17-input"></div><div class="v17-field"><label class="v17-label">名稱</label><input id="admin-blood-name" class="v17-input"></div><div class="v17-field"><label class="v17-label">排序</label><input id="admin-blood-sort" type="number" class="v17-input" value="${v17NextBloodSort}"></div><div class="v17-field"><button onclick="adminAddBlood()" class="v17-btn v17-btn-danger w-full">＋ 新增血品</button></div></div><div class="v177-card-grid">${blood.map(b=>`<div class="v17-subcard" data-v18-dirty="0" data-v18-blood="${b.id}"><div class="v17-form-grid"><div class="v17-field"><label class="v17-label">名稱</label><input id="blood-name-${b.id}" class="v17-input" value="${escapeHtml(b.name)}"></div><div class="v17-field"><label class="v17-label">排序</label><input id="blood-sort-${b.id}" type="number" class="v17-input" value="${b.sort_order}"></div><div class="v17-field">${renderV17Toggle(`blood-active-${b.id}`,b.is_active,'啟用')}</div></div></div>`).join('')}</div></section>`;root.querySelectorAll('[data-v18-dirty] input,[data-v18-dirty] select').forEach(el=>{el.addEventListener('input',()=>v18MarkAdminCard(el));el.addEventListener('change',()=>v18MarkAdminCard(el));});}
+async function saveAllV18Tubes(btn){const cards=[...document.querySelectorAll('[data-v18-tube][data-v18-dirty="1"]')];if(!cards.length)return alertV17('管路設定沒有需要儲存的變更');setV17ButtonBusy(btn,true,'儲存中...');try{for(const card of cards){const id=card.dataset.v18Tube,rows=[...card.querySelectorAll('[data-schema-row]')],schema=rows.map(r=>({key:r.querySelector('[data-key]').value.trim(),label:r.querySelector('[data-label]').value.trim(),type:r.querySelector('[data-type]').value})).filter(x=>x.key&&x.label);const{error}=await supabaseClient.from('tube_types').update({name:document.getElementById(`tube-name-${id}`).value.trim(),sort_order:Number(document.getElementById(`tube-sort-${id}`).value)||100,is_active:document.getElementById(`tube-active-${id}`).checked,field_schema:schema}).eq('id',id);if(error)throw error;}alertV17(`管路設定已更新，共 ${cards.length} 項`);await loadAdminTubesBlood();}catch(e){alertV17(e.message,true);}finally{setV17ButtonBusy(btn,false);}}
+async function saveAllV18Blood(btn){const cards=[...document.querySelectorAll('[data-v18-blood][data-v18-dirty="1"]')];if(!cards.length)return alertV17('血品設定沒有需要儲存的變更');setV17ButtonBusy(btn,true,'儲存中...');try{for(const card of cards){const id=card.dataset.v18Blood,{error}=await supabaseClient.from('blood_products').update({name:document.getElementById(`blood-name-${id}`).value.trim(),sort_order:Number(document.getElementById(`blood-sort-${id}`).value)||100,is_active:document.getElementById(`blood-active-${id}`).checked}).eq('id',id);if(error)throw error;}alertV17(`血品設定已更新，共 ${cards.length} 項`);await loadAdminTubesBlood();}catch(e){alertV17(e.message,true);}finally{setV17ButtonBusy(btn,false);}}
+
+// V18 啟動補強：確保新 Modal 星星渲染
+setTimeout(()=>{renderV18Stars();},500);
+
+// ---------- V18 管理者藥物／心律改為「同類別一次儲存」 ----------
+const v18LegacyLoadAdminMedications = loadAdminMedications;
+loadAdminMedications = async function(){
+    await v18LegacyLoadAdminMedications();
+    const root=adminRoot();if(!root)return;
+    const sections=[...root.querySelectorAll('section')];
+    const master=sections.find(s=>s.querySelector('h2')?.textContent.trim()==='藥物主檔');
+    if(master){
+        const h=master.querySelector('h2');const wrap=document.createElement('div');wrap.className='v177-section-head';
+        const left=document.createElement('div');left.innerHTML='<h2 class="font-extrabold text-lg">藥物主檔</h2><div id="v18-admin-med-unsaved" class="v18-unsaved">已全部儲存</div>';
+        const btn=document.createElement('button');btn.className='v17-btn v17-btn-primary';btn.innerHTML='<i class="fa-solid fa-floppy-disk"></i>儲存藥物設定';btn.onclick=()=>saveAllV18AdminMeds(btn);
+        wrap.append(left,btn);h.replaceWith(wrap);
+    }
+    root.querySelectorAll('[id^="admin-med-"]').forEach(card=>{
+        const id=card.id.replace('admin-med-','');if(id==='new')return;
+        card.dataset.v18Dirty='0';card.dataset.v18AdminMed=id;
+        card.querySelectorAll('.v17-actions button').forEach(b=>b.remove());
+        card.querySelectorAll('input,select').forEach(el=>{el.addEventListener('input',()=>v18MarkAdminMed(card));el.addEventListener('change',()=>v18MarkAdminMed(card));});
+    });
+};
+function v18MarkAdminMed(card){card.dataset.v18Dirty='1';const el=document.getElementById('v18-admin-med-unsaved');if(el){const n=document.querySelectorAll('[data-v18-admin-med][data-v18-dirty="1"]').length;el.textContent=n?`${n} 項尚未儲存`:'已全部儲存';}}
+async function v18SaveAdminMedCard(card){
+    const id=card.dataset.v18AdminMed,get=f=>card.querySelector(`[data-f="${f}"]`),hasPump=get('has_pump').checked;
+    const payload={name:get('name').value.trim(),generic_name:get('generic_name').value.trim()||null,amount_value:Number(get('amount_value').value)||null,amount_unit:get('amount_unit').value.trim()||'mg',volume_ml:Number(get('volume_ml').value)||null,default_qty:Number(get('default_qty').value)||1,has_pump:hasPump,pump_min_qty:hasPump?(Number(get('pump_min_qty').value)||1):1,pump_default_value:hasPump?(Number(get('pump_default_value').value)||0):null,pump_unit:hasPump?(get('pump_unit').value.trim()||'滴/分'):'滴/分',is_active:get('is_active').checked,global_sort:Number(get('global_sort').value)||100,updated_at:new Date().toISOString()};
+    if(!payload.name)throw new Error('藥物名稱必填');
+    const{error}=await supabaseClient.from('medications').update(payload).eq('id',id);if(error)throw error;
+    const mixEnabled=get('has_mix_ui')?.checked,sols=mixEnabled?[...card.querySelectorAll('[data-sol]:checked')].map(x=>x.dataset.sol):[],vols=mixEnabled?[...card.querySelectorAll('[data-vol]:checked')].map(x=>x.dataset.vol):[];
+    const d1=await supabaseClient.from('medication_mix_solutions').delete().eq('medication_id',id);if(d1.error)throw d1.error;
+    const d2=await supabaseClient.from('medication_mix_volumes').delete().eq('medication_id',id);if(d2.error)throw d2.error;
+    if(sols.length){const r=await supabaseClient.from('medication_mix_solutions').insert(sols.map(solution_id=>({medication_id:id,solution_id})));if(r.error)throw r.error;}
+    if(vols.length){const r=await supabaseClient.from('medication_mix_volumes').insert(vols.map(volume_id=>({medication_id:id,volume_id})));if(r.error)throw r.error;}
+}
+async function saveAllV18AdminMeds(btn){const cards=[...document.querySelectorAll('[data-v18-admin-med][data-v18-dirty="1"]')];if(!cards.length)return alertV17('藥物主檔沒有需要儲存的變更');setV17ButtonBusy(btn,true,'儲存中...');try{for(const card of cards)await v18SaveAdminMedCard(card);alertV17(`藥物設定已更新，共 ${cards.length} 項`);await loadAdminMedications();}catch(e){alertV17(`儲存失敗：${e.message}`,true);}finally{setV17ButtonBusy(btn,false);}}
+
+const v18LegacyLoadAdminRhythms = loadAdminRhythms;
+loadAdminRhythms = async function(){
+    await v18LegacyLoadAdminRhythms();const root=adminRoot();if(!root)return;
+    const sections=[...root.querySelectorAll('section')];const sec=sections.find(s=>s.querySelector('h2')?.textContent.trim()==='心律');
+    if(sec){const h=sec.querySelector('h2'),wrap=document.createElement('div');wrap.className='v177-section-head';wrap.innerHTML='<div><h2 class="font-extrabold text-lg">心律</h2><div id="v18-admin-rhythm-unsaved" class="v18-unsaved">已全部儲存</div></div>';const btn=document.createElement('button');btn.className='v17-btn v17-btn-primary';btn.textContent='儲存心律設定';btn.onclick=()=>saveAllV18Rhythms(btn);wrap.appendChild(btn);h.replaceWith(wrap);}
+    root.querySelectorAll('input[id^="rh-name-"]').forEach(inp=>{const id=inp.id.replace('rh-name-',''),card=inp.closest('.v17-subcard');if(!card)return;card.dataset.v18Rhythm=id;card.dataset.v18Dirty='0';card.querySelectorAll('.v17-actions').forEach(x=>x.remove());card.querySelectorAll('input,select').forEach(el=>{const mark=()=>{card.dataset.v18Dirty='1';const n=document.querySelectorAll('[data-v18-rhythm][data-v18-dirty="1"]').length;const u=document.getElementById('v18-admin-rhythm-unsaved');if(u)u.textContent=n?`${n} 項尚未儲存`:'已全部儲存';};el.addEventListener('input',mark);el.addEventListener('change',mark);});});
+};
+async function saveAllV18Rhythms(btn){const cards=[...document.querySelectorAll('[data-v18-rhythm][data-v18-dirty="1"]')];if(!cards.length)return alertV17('心律設定沒有需要儲存的變更');setV17ButtonBusy(btn,true,'儲存中...');try{for(const c of cards){const id=c.dataset.v18Rhythm,{error}=await supabaseClient.from('rhythms').update({name:document.getElementById(`rh-name-${id}`).value.trim(),sort_order:Number(document.getElementById(`rh-sort-${id}`).value)||100,is_shockable:document.getElementById(`rh-shock-${id}`).checked,is_active:document.getElementById(`rh-active-${id}`).checked}).eq('id',id);if(error)throw error;}alertV17(`心律設定已更新，共 ${cards.length} 項`);await loadAdminRhythms();}catch(e){alertV17(e.message,true);}finally{setV17ButtonBusy(btn,false);}}
+
+// ---------- V18 使用體驗離線補同步：必須按「送出」，但網路中斷不阻擋下一次急救 ----------
+function v18PendingRatings(){try{return JSON.parse(localStorage.getItem('cpr_v18_pending_ratings')||'[]')}catch(e){return[]}}
+function v18SavePendingRatings(list){localStorage.setItem('cpr_v18_pending_ratings',JSON.stringify(list));}
+async function flushV18PendingRatings(){const list=v18PendingRatings();if(!list.length||!navigator.onLine)return;const remain=[];for(const x of list){try{const{error}=await supabaseClient.rpc('submit_cpr_experience',{p_case_id:x.caseId,p_rating:x.rating,p_comment:x.comment||null,p_rating_changed:!!x.ratingChanged,p_app_version:x.appVersion||'V18.1'});if(error)throw error;}catch(e){remain.push(x);}}v18SavePendingRatings(remain);}
+submitV18Rating = async function(btn){
+    if(!v18RatingContext?.caseId)return;
+    const payload={caseId:v18RatingContext.caseId,rating:v18Rating,comment:document.getElementById('v18-rating-comment').value.trim()||null,ratingChanged:v18RatingChanged,appVersion:`V${CPRNOTE_APP_VERSION}`};
+    setV17ButtonBusy(btn,true,'送出中...');
+    try{
+        const{error}=await supabaseClient.rpc('submit_cpr_experience',{p_case_id:payload.caseId,p_rating:payload.rating,p_comment:payload.comment,p_rating_changed:payload.ratingChanged,p_app_version:payload.appVersion});
+        if(error)throw error;
+        document.getElementById('v18-rating-modal').classList.add('hidden');const bed=v18RatingContext.bed;v18RatingContext=null;resetForNewCPR();showToast(`本次 CPR 已完成並送出使用體驗${bed?`｜${bed}床`:''}`);
+    }catch(e){
+        const list=v18PendingRatings();list.push(payload);v18SavePendingRatings(list);
+        document.getElementById('v18-rating-modal').classList.add('hidden');const bed=v18RatingContext.bed;v18RatingContext=null;resetForNewCPR();showToast(`使用體驗已保存在此裝置，網路恢復後會自動補同步${bed?`｜${bed}床`:''}`);
+    }finally{setV17ButtonBusy(btn,false);}
+};
+window.addEventListener('online',()=>setTimeout(flushV18PendingRatings,1500));
+setTimeout(flushV18PendingRatings,2500);

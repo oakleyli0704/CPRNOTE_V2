@@ -1,4 +1,4 @@
-/* CPRNOTE V17.5 - 後台 UI/UX + RWD + 密碼回饋修正版 */
+/* CPRNOTE V17.7 - 後台 UI/UX 與帳號申請優化 */
 .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
         .btn-active:active { transform: scale(0.96); transition: transform 0.1s; }
@@ -109,3 +109,43 @@
   .v17-actions .v17-btn{width:100%;}
   .v17-toast{left:16px;right:16px;top:82px;min-width:0;max-width:none;}
 }
+
+
+/* ============================================================
+   V17.6 裝置模式切換 / 側邊抽屜
+   ============================================================ */
+.v176-drawer-backdrop{position:fixed;inset:0;background:rgba(15,23,42,.38);z-index:9997;backdrop-filter:blur(1px);}
+.v176-drawer{position:fixed;top:0;right:0;bottom:0;width:min(380px,92vw);z-index:9998;background:#fff;box-shadow:-18px 0 50px rgba(15,23,42,.2);padding:18px;overflow-y:auto;transform:translateX(105%);transition:transform .22s ease;}
+.v176-drawer.open{transform:translateX(0)}
+.v176-drawer-header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-bottom:14px;border-bottom:1px solid #e2e8f0;}
+.v176-icon-btn{width:42px;height:42px;border-radius:12px;background:#f1f5f9;color:#475569;display:flex;align-items:center;justify-content:center;font-size:18px;}
+.v176-info-card{margin-top:16px;border:1px solid #e2e8f0;border-radius:14px;background:#f8fafc;overflow:hidden;}
+.v176-info-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 14px;font-size:14px;}
+.v176-info-row + .v176-info-row{border-top:1px solid #e2e8f0;}
+.v176-info-row span{color:#64748b;font-weight:700}.v176-info-row strong{color:#0f172a;font-weight:900;}
+.v176-section{margin-top:18px}.v176-label{display:block;font-size:13px;font-weight:900;color:#334155;margin-bottom:8px;}
+.v176-help{font-size:12px;line-height:1.5;color:#64748b;margin-top:7px;}
+.v176-segment{display:grid;grid-template-columns:1fr 1fr;background:#f1f5f9;padding:4px;border-radius:12px;gap:4px;}
+.v176-segment-btn{min-height:42px;border-radius:9px;font-size:14px;font-weight:900;color:#64748b;white-space:nowrap;}
+.v176-segment-btn.active{background:#fff;color:#1d4ed8;box-shadow:0 1px 4px rgba(15,23,42,.12);}
+.v176-primary-btn,.v176-secondary-btn,.v176-save-btn{width:100%;min-height:46px;border-radius:12px;font-weight:900;display:flex;align-items:center;justify-content:center;gap:8px;white-space:nowrap;}
+.v176-primary-btn{background:#2563eb;color:#fff}.v176-secondary-btn{background:#f1f5f9;color:#334155;border:1px solid #cbd5e1}.v176-save-btn{margin-top:10px;background:#0f766e;color:#fff;}
+.v176-select{width:100%;min-height:44px;border:2px solid #cbd5e1;border-radius:12px;padding:0 12px;background:#fff;font-weight:800;color:#0f172a;}
+.v176-warning{margin-top:18px;padding:12px;border-radius:12px;background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;font-size:12px;font-weight:700;line-height:1.55;}
+@media(max-width:520px){.v176-drawer{width:92vw;padding:16px}.v176-segment-btn{font-size:13px}}
+
+
+/* V17.7 單位設定效率 / 卡片狀態 / 申請頁 */
+.v177-section-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;}
+.v177-card-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;align-items:start;}
+.v177-card-off{background:#f1f5f9;border-color:#cbd5e1;}
+.v177-card-off .v17-form-grid{opacity:.52;filter:grayscale(.15);}
+.v177-card-off .v17-status-line>div:first-child{opacity:.65;}
+.v177-off-note{margin-top:10px;padding:8px 10px;border-radius:9px;background:#e2e8f0;color:#64748b;font-size:12px;font-weight:800;}
+.v177-dirty{font-size:12px;color:#94a3b8;margin-top:3px;font-weight:800;}
+.v177-dirty.is-dirty{color:#d97706;}
+.v177-inline-link{margin-top:5px;text-align:left;color:#2563eb;font-size:11px;font-weight:800;white-space:nowrap;}
+.v177-audit-item{padding:10px 0;border-bottom:1px solid #f1f5f9;}
+.v177-audit-item:last-child{border-bottom:0;}
+#head-nurse-register-card input,#head-nurse-register-card select{min-height:46px;}
+@media(max-width:767px){.v177-card-grid{grid-template-columns:1fr}.v177-section-head .v17-btn{width:100%}}

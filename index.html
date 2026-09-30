@@ -3,11 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>CPR 快速紀錄-V17.5</title>
+    <title>CPR 快速紀錄-V17.7</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="style.css?v=17.5.0">
+    <link rel="stylesheet" href="style.css?v=17.7.0">
 </head>
 <body class="bg-slate-100 min-h-screen flex flex-col font-sans text-slate-800 select-none pb-[80px]">
 
@@ -15,63 +15,17 @@
     <!-- ==================== V17 電腦版：即時監看＋護理長／管理者後台 ==================== -->
     <div id="desktop-app" class="hidden min-h-screen w-full bg-slate-100 select-text">
         <div id="desktop-login" class="min-h-screen flex items-center justify-center p-6">
-            <div class="w-full max-w-md bg-white rounded-2xl shadow-xl border border-slate-200 p-7">
-                <div class="text-center mb-6">
-                    <div class="w-14 h-14 mx-auto rounded-2xl bg-blue-100 text-blue-600 flex items-center justify-center text-2xl mb-3">
-                        <i class="fa-solid fa-heart-pulse"></i>
-                    </div>
-                    <h1 class="text-2xl font-extrabold text-slate-800">CPR 即時監看</h1>
-                    <p class="text-sm text-slate-500 mt-1">單位、護理長與管理者皆由此登入</p>
-                </div>
-                <div class="space-y-4">
-                    <div>
-                        <label class="block text-sm font-bold text-slate-600 mb-1">帳號</label>
-                        <input id="desktop-username" type="text" autocomplete="username" placeholder="例如：12B / ADMIN / 您的帳號" class="w-full p-3 border-2 border-slate-200 rounded-xl font-bold uppercase focus:outline-none focus:border-blue-400">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-bold text-slate-600 mb-1">密碼</label>
-                        <div class="relative">
-                            <input id="desktop-password" type="password" autocomplete="current-password" placeholder="請輸入密碼" class="w-full p-3 pr-12 border-2 border-slate-200 rounded-xl font-bold focus:outline-none focus:border-blue-400">
-                            <button type="button" onclick="togglePasswordVisibility('desktop-password','desktop-password-eye')" class="absolute right-1 top-1 bottom-1 w-10 text-slate-500 hover:text-blue-600" aria-label="顯示或隱藏密碼">
-                                <i id="desktop-password-eye" class="fa-solid fa-eye-slash"></i>
-                            </button>
-                        </div>
-                    </div>
-                    <div id="desktop-login-error" class="hidden bg-red-50 border border-red-200 text-red-700 text-sm font-bold p-3 rounded-xl"></div>
-                    <button id="desktop-login-btn" onclick="desktopLogin()" class="w-full py-3.5 bg-blue-600 text-white rounded-xl font-bold text-base btn-active shadow-sm">
-                        <i class="fa-solid fa-right-to-bracket mr-1"></i> 登入
-                    </button>
-                    <button type="button" onclick="showHeadNurseRegister(true)" class="w-full py-2.5 bg-white text-blue-700 border border-blue-200 rounded-xl font-bold text-sm btn-active">
-                        <i class="fa-solid fa-user-plus mr-1"></i> 護理長申請帳號
-                    </button>
-                </div>
-                <p class="text-[11px] text-slate-400 text-center mt-5">CPR 臨床紀錄在電腦版一律唯讀；護理長與管理者僅能調整系統設定。</p>
-
-                <div id="head-nurse-register" class="hidden mt-6 pt-5 border-t border-slate-200">
-                    <div class="flex items-center justify-between mb-4">
-                        <div>
-                            <h2 class="font-extrabold text-slate-800">護理長帳號申請</h2>
-                            <p class="text-xs text-slate-500 mt-0.5">送出後需由管理者核准才可登入。</p>
-                        </div>
-                        <button type="button" onclick="showHeadNurseRegister(false)" class="w-9 h-9 rounded-lg bg-slate-100 text-slate-500"><i class="fa-solid fa-xmark"></i></button>
-                    </div>
-                    <div class="space-y-3">
-                        <div><label class="block text-xs font-bold text-slate-600 mb-1">申請帳號</label><input id="hn-reg-username" class="w-full p-3 border-2 border-slate-200 rounded-xl font-bold" placeholder="例如：HN001"></div>
-                        <div><label class="block text-xs font-bold text-slate-600 mb-1">姓名 / 顯示名稱</label><input id="hn-reg-name" class="w-full p-3 border-2 border-slate-200 rounded-xl" placeholder="使用假資料測試"></div>
-                        <div><label class="block text-xs font-bold text-slate-600 mb-1">員編</label><input id="hn-reg-employee" class="w-full p-3 border-2 border-slate-200 rounded-xl" placeholder="使用假資料測試"></div>
-                        <div><label class="block text-xs font-bold text-slate-600 mb-1">單位</label><select id="hn-reg-unit" class="w-full p-3 border-2 border-slate-200 rounded-xl bg-white font-bold"><option>讀取中...</option></select></div>
-                        <div>
-                            <label class="block text-xs font-bold text-slate-600 mb-1">密碼</label>
-                            <div class="relative"><input id="hn-reg-password" type="password" class="w-full p-3 pr-12 border-2 border-slate-200 rounded-xl" placeholder="至少 8 碼"><button type="button" onclick="togglePasswordVisibility('hn-reg-password','hn-reg-password-eye')" class="absolute right-1 top-1 bottom-1 w-10 text-slate-500"><i id="hn-reg-password-eye" class="fa-solid fa-eye-slash"></i></button></div>
-                        </div>
-                        <div>
-                            <label class="block text-xs font-bold text-slate-600 mb-1">再次輸入密碼</label>
-                            <div class="relative"><input id="hn-reg-password2" type="password" class="w-full p-3 pr-12 border-2 border-slate-200 rounded-xl" placeholder="再次輸入"><button type="button" onclick="togglePasswordVisibility('hn-reg-password2','hn-reg-password2-eye')" class="absolute right-1 top-1 bottom-1 w-10 text-slate-500"><i id="hn-reg-password2-eye" class="fa-solid fa-eye-slash"></i></button></div>
-                        </div>
-                        <div id="hn-reg-message" class="hidden text-sm font-bold p-3 rounded-xl"></div>
-                        <button onclick="submitHeadNurseRegistration()" class="w-full py-3 bg-blue-600 text-white rounded-xl font-bold">送出申請</button>
-                    </div>
-                </div>
+            <button onclick="openDeviceDrawer()" class="fixed top-3 right-3 z-50 w-11 h-11 rounded-full bg-white border border-slate-200 shadow-md text-slate-600 hover:text-blue-600 flex items-center justify-center" aria-label="裝置設定">
+                <i class="fa-solid fa-gear"></i>
+            </button>
+            <div id="desktop-login-card" class="w-full max-w-md bg-white rounded-2xl shadow-xl border border-slate-200 p-7">
+                <div class="text-center mb-6"><div class="w-14 h-14 mx-auto rounded-2xl bg-blue-100 text-blue-600 flex items-center justify-center text-2xl mb-3"><i class="fa-solid fa-heart-pulse"></i></div><h1 class="text-2xl font-extrabold text-slate-800">CPR 即時監看</h1><p class="text-sm text-slate-500 mt-1">單位、護理長與管理者皆由此登入</p></div>
+                <div class="space-y-4"><div><label class="block text-sm font-bold text-slate-600 mb-1">帳號</label><input id="desktop-username" type="text" autocomplete="username" placeholder="單位代碼 / ADMIN / 6碼員編" class="w-full p-3 border-2 border-slate-200 rounded-xl font-bold uppercase focus:outline-none focus:border-blue-400"></div><div><label class="block text-sm font-bold text-slate-600 mb-1">密碼</label><div class="relative"><input id="desktop-password" type="password" autocomplete="current-password" placeholder="請輸入密碼" class="w-full p-3 pr-12 border-2 border-slate-200 rounded-xl font-bold focus:outline-none focus:border-blue-400"><button type="button" onclick="togglePasswordVisibility('desktop-password','desktop-password-eye')" class="absolute right-1 top-1 bottom-1 w-10 text-slate-500 hover:text-blue-600" aria-label="顯示或隱藏密碼"><i id="desktop-password-eye" class="fa-solid fa-eye-slash"></i></button></div></div><div id="desktop-login-error" class="hidden bg-red-50 border border-red-200 text-red-700 text-sm font-bold p-3 rounded-xl"></div><button id="desktop-login-btn" onclick="desktopLogin()" class="w-full py-3.5 bg-blue-600 text-white rounded-xl font-bold text-base btn-active shadow-sm"><i class="fa-solid fa-right-to-bracket mr-1"></i> 登入</button><button type="button" onclick="showHeadNurseRegister(true)" class="w-full py-2.5 bg-white text-blue-700 border border-blue-200 rounded-xl font-bold text-sm btn-active"><i class="fa-solid fa-user-plus mr-1"></i> 護理長申請帳號</button></div>
+                <p class="text-[11px] text-slate-400 text-center mt-5">CPR 臨床紀錄在後台一律唯讀；護理長與管理者僅能依權限調整系統設定。</p>
+            </div>
+            <div id="head-nurse-register-card" class="hidden w-full max-w-md bg-white rounded-2xl shadow-xl border border-slate-200 p-7">
+                <div class="flex items-start justify-between gap-4 mb-5"><div><h1 class="text-xl font-extrabold text-slate-800">護理長帳號申請</h1><p class="text-sm text-slate-500 mt-1">送出後需由管理者核准才可登入。</p></div><button type="button" onclick="showHeadNurseRegister(false)" class="w-10 h-10 rounded-xl bg-slate-100 text-slate-500 flex items-center justify-center" aria-label="返回登入"><i class="fa-solid fa-arrow-left"></i></button></div>
+                <div class="space-y-3"><div><label class="block text-xs font-bold text-slate-600 mb-1">員編</label><input id="hn-reg-employee" inputmode="numeric" maxlength="6" class="w-full p-3 border-2 border-slate-200 rounded-xl font-bold" placeholder="請輸入6碼員編"></div><div><label class="block text-xs font-bold text-slate-600 mb-1">姓名</label><input id="hn-reg-name" class="w-full p-3 border-2 border-slate-200 rounded-xl" placeholder="請輸入姓名"></div><div><label class="block text-xs font-bold text-slate-600 mb-1">電子郵件</label><input id="hn-reg-email" type="email" autocomplete="email" class="w-full p-3 border-2 border-slate-200 rounded-xl" placeholder="請輸入Email"></div><div><label class="block text-xs font-bold text-slate-600 mb-1">單位</label><select id="hn-reg-unit" class="w-full p-3 border-2 border-slate-200 rounded-xl bg-white font-bold"><option value="">請選擇</option></select></div><div><label class="block text-xs font-bold text-slate-600 mb-1">密碼</label><div class="relative"><input id="hn-reg-password" type="password" class="w-full p-3 pr-12 border-2 border-slate-200 rounded-xl" placeholder="至少 8 碼"><button type="button" onclick="togglePasswordVisibility('hn-reg-password','hn-reg-password-eye')" class="absolute right-1 top-1 bottom-1 w-10 text-slate-500"><i id="hn-reg-password-eye" class="fa-solid fa-eye-slash"></i></button></div></div><div><label class="block text-xs font-bold text-slate-600 mb-1">再次輸入密碼</label><div class="relative"><input id="hn-reg-password2" type="password" class="w-full p-3 pr-12 border-2 border-slate-200 rounded-xl" placeholder="再次輸入"><button type="button" onclick="togglePasswordVisibility('hn-reg-password2','hn-reg-password2-eye')" class="absolute right-1 top-1 bottom-1 w-10 text-slate-500"><i id="hn-reg-password2-eye" class="fa-solid fa-eye-slash"></i></button></div></div><div id="hn-reg-message" class="hidden text-sm font-bold p-3 rounded-xl"></div><button onclick="submitHeadNurseRegistration()" class="w-full py-3 bg-blue-600 text-white rounded-xl font-bold">送出申請</button><button type="button" onclick="showHeadNurseRegister(false)" class="w-full py-2.5 bg-slate-100 text-slate-700 rounded-xl font-bold">返回登入</button></div>
             </div>
         </div>
 
@@ -84,14 +38,17 @@
                             <div class="flex items-center gap-2">
                                 <h1 id="desktop-title" class="text-lg font-extrabold truncate">CPR 即時監看</h1>
                                 <span id="desktop-live-badge" class="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold"><i class="fa-solid fa-circle text-[6px] mr-1"></i>即時同步</span>
-                                <span class="v17-version-pill">V17.5</span>
+                                <span class="v17-version-pill">V17.7</span>
                             </div>
                             <div id="desktop-role-label" class="text-xs text-slate-400"></div>
                         </div>
                     </div>
                     <div class="flex items-center gap-2">
                         <button onclick="refreshDesktopDashboard(true)" class="px-3 py-2 rounded-lg bg-slate-800 text-slate-200 text-sm font-bold hover:bg-slate-700"><i class="fa-solid fa-rotate mr-1"></i>重新整理</button>
-                        <button onclick="desktopLogout()" class="px-3 py-2 rounded-lg bg-slate-700 text-white text-sm font-bold hover:bg-slate-600"><i class="fa-solid fa-right-from-bracket mr-1"></i>登出</button>
+                        <div class="flex items-center gap-2">
+                            <button onclick="openDeviceDrawer()" class="w-10 h-10 rounded-lg bg-slate-800 text-slate-200 hover:bg-slate-700 flex items-center justify-center" aria-label="裝置設定"><i class="fa-solid fa-gear"></i></button>
+                            <button onclick="desktopLogout()" class="px-3 py-2 rounded-lg bg-slate-700 text-white text-sm font-bold hover:bg-slate-600"><i class="fa-solid fa-right-from-bracket mr-1"></i>登出</button>
+                        </div>
                     </div>
                 </div>
                 <div id="desktop-nav" class="max-w-[1500px] mx-auto px-5 pb-3 flex gap-2 overflow-x-auto no-scrollbar">
@@ -138,7 +95,7 @@
                                 <div class="flex justify-between items-start gap-4">
                                     <div>
                                         <div class="flex items-center gap-2 flex-wrap">
-                                            <h2 id="desktop-case-name" class="text-2xl font-extrabold text-slate-900">12B｜床號待補</h2>
+                                            <h2 id="desktop-case-name" class="text-2xl font-extrabold text-slate-900">尚未選擇單位｜床號待補</h2>
                                             <span id="desktop-case-status" class="text-xs font-bold px-2 py-1 rounded-full bg-red-100 text-red-700">CPR中</span>
                                         </div>
                                         <div id="desktop-case-meta" class="text-sm text-slate-500 mt-1"></div>
@@ -229,8 +186,11 @@
             <button id="btn-rosc" onclick="logROSC()" class="flex-1 bg-emerald-500 text-white py-2 rounded-lg font-bold text-sm btn-active shadow-sm flex justify-center items-center gap-1 opacity-50 pointer-events-none transition-opacity">
                 <i class="fa-solid fa-heart-pulse"></i> ROSC
             </button>
-            <button onclick="toggleSound()" id="btn-sound" class="text-slate-500 px-2 py-2 text-lg">
+            <button onclick="toggleSound()" id="btn-sound" class="text-slate-500 px-2 py-2 text-lg" aria-label="聲音設定">
                 <i class="fa-solid fa-volume-high"></i>
+            </button>
+            <button onclick="openDeviceDrawer()" id="btn-device-settings" class="text-slate-500 px-2 py-2 text-lg" aria-label="裝置設定">
+                <i class="fa-solid fa-gear"></i>
             </button>
         </div>
 
@@ -255,7 +215,7 @@
         <div id="case-info-bar" class="flex items-center justify-between gap-2 bg-slate-800 text-white px-2.5 py-1.5 rounded-lg shadow-sm">
             <div class="min-w-0 flex-1 case-info-text text-[11px] md:text-xs leading-tight overflow-hidden">
                 <div class="flex items-center gap-1.5 whitespace-nowrap overflow-x-auto no-scrollbar">
-                    <span id="case-unit" class="font-extrabold text-teal-300">12B</span>
+                    <span id="case-unit" class="font-extrabold text-teal-300">單位未設定</span>
                     <span class="text-slate-500">｜</span>
                     <span id="case-bed" class="font-bold">尚未開始</span>
                     <span class="text-slate-500">｜</span>
@@ -527,7 +487,7 @@
             <div id="timeline-mini-header" class="p-2 border-b border-slate-700 bg-slate-900 sticky top-0 z-30 shadow-md">
                 <!-- V16.2：手機時間軸第一行完整保留 CPR / Adrenalin；藥物總計移到第二行，避免窄螢幕遮擋 -->
                 <div class="min-w-0 w-full flex items-center gap-1.5 text-[11px] md:text-xs whitespace-nowrap overflow-x-auto no-scrollbar">
-                    <span id="timeline-unit" class="font-extrabold text-teal-300">12B</span>
+                    <span id="timeline-unit" class="font-extrabold text-teal-300">單位未設定</span>
                     <span class="text-slate-600">｜</span>
                     <span id="timeline-bed" class="font-bold text-white">尚未開始</span>
                     <span class="text-slate-600">｜</span>
@@ -739,11 +699,11 @@
             <div>
                 <label class="block text-sm font-bold text-slate-600 mb-2">使用單位</label>
                 <select id="device-unit-select" class="w-full p-3 border-2 border-slate-200 rounded-xl bg-slate-50 font-bold text-lg focus:outline-none focus:border-blue-400">
-                    <option value="12B" selected>12B</option>
+                    <option value="">請選擇</option>
                 </select>
             </div>
             <button onclick="confirmDeviceUnit()" class="w-full py-3.5 bg-blue-600 text-white rounded-xl font-bold text-base btn-active shadow-sm">確認使用此單位</button>
-            <p class="text-[11px] text-slate-400 text-center">單位清單由 Supabase 讀取；目前已設定 12B。</p>
+            <p class="text-[11px] text-slate-400 text-center">單位清單由 Supabase 讀取；選擇一次後會記住此裝置。</p>
         </div>
 
         <!-- 6. V15 床號 / 紀錄護理師後補 Modal -->
@@ -755,7 +715,7 @@
                 <p class="text-xs text-slate-500 mt-1">急救進行中可隨時補填，不會停止計時。</p>
             </div>
             <div class="bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm">
-                <span class="text-slate-500">病房：</span><span id="case-info-unit" class="font-extrabold text-slate-800">12B</span>
+                <span class="text-slate-500">病房：</span><span id="case-info-unit" class="font-extrabold text-slate-800">單位未設定</span>
             </div>
             <div>
                 <label class="block text-sm font-bold text-slate-600 mb-1">床號</label>
@@ -782,7 +742,7 @@
             <div class="grid grid-cols-2 gap-2 text-sm">
                 <div class="bg-slate-50 border border-slate-200 rounded-xl p-3">
                     <div class="text-[10px] text-slate-500">病房</div>
-                    <div id="stop-unit" class="font-extrabold text-slate-800 mt-1">12B</div>
+                    <div id="stop-unit" class="font-extrabold text-slate-800 mt-1">單位未設定</div>
                 </div>
                 <div class="bg-slate-50 border border-slate-200 rounded-xl p-3">
                     <div class="text-[10px] text-slate-500">CPR ID</div>
@@ -819,7 +779,51 @@
 
     </div>
 
-        <script src="supabase-config.js?v=17.5.0"></script>
-    <script src="app.js?v=17.5.0"></script>
+
+    <!-- V17.7 裝置設定抽屜 -->
+    <div id="device-drawer-backdrop" class="v176-drawer-backdrop hidden" onclick="closeDeviceDrawer()"></div>
+    <aside id="device-drawer" class="v176-drawer" aria-hidden="true">
+        <div class="v176-drawer-header">
+            <div>
+                <div class="text-lg font-extrabold text-slate-900">裝置設定</div>
+                <div class="text-xs text-slate-500 mt-1">只影響這一台裝置</div>
+            </div>
+            <button onclick="closeDeviceDrawer()" class="v176-icon-btn" aria-label="關閉"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+
+        <div class="v176-info-card">
+            <div class="v176-info-row"><span>目前單位</span><strong id="drawer-current-unit">請選擇</strong></div>
+            <div class="v176-info-row"><span>目前模式</span><strong id="drawer-current-mode">CPR紀錄</strong></div>
+        </div>
+
+        <div class="v176-section">
+            <div class="v176-label">預設開啟模式</div>
+            <div class="v176-segment">
+                <button id="drawer-default-cpr" onclick="setDeviceDefaultMode('mobile')" class="v176-segment-btn">CPR紀錄</button>
+                <button id="drawer-default-backend" onclick="setDeviceDefaultMode('desktop')" class="v176-segment-btn">後台登入</button>
+            </div>
+            <div class="v176-help">下次開啟網站時會直接進入這個模式，不會再詢問。</div>
+        </div>
+
+        <div class="v176-section">
+            <button id="drawer-switch-mode-btn" onclick="switchDeviceModeNow()" class="v176-primary-btn"><i class="fa-solid fa-arrow-right-arrow-left"></i><span>進入後台</span></button>
+        </div>
+
+        <div class="v176-section">
+            <button onclick="toggleDrawerUnitEditor()" class="v176-secondary-btn"><i class="fa-solid fa-hospital"></i><span>變更單位</span></button>
+            <div id="drawer-unit-editor" class="hidden mt-3">
+                <label class="v176-label" for="drawer-unit-select">選擇此裝置所屬單位</label>
+                <select id="drawer-unit-select" class="v176-select"></select>
+                <button onclick="saveDrawerUnit()" class="v176-save-btn">儲存單位</button>
+            </div>
+        </div>
+
+        <div class="v176-warning">急救使用時建議將此裝置預設為「CPR紀錄」。變更單位不會刪除既有 CPR 資料。</div>
+    </aside>
+
+        <script src="supabase-config.js?v=17.7.0"></script>
+    <script src="app.js?v=17.7.0"></script>
+
+    <div id="app-version-footer" class="text-center text-[10px] text-slate-400 py-2 select-text">CPRNOTE V17.7｜後台 UI/UX 與帳號申請優化</div>
 </body>
 </html>

@@ -3,18 +3,19 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>CPR 快速紀錄-V18.1</title>
+    <title>CPR 快速紀錄-V2</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="style.css?v=18.1.0">
+    <link rel="stylesheet" href="style.css?build=20260930-2">
 </head>
 <body class="bg-slate-100 min-h-screen flex flex-col font-sans text-slate-800 select-none pb-[80px]">
 
 
     <!-- ==================== V17 電腦版：即時監看＋護理長／管理者後台 ==================== -->
     <div id="desktop-app" class="hidden min-h-screen w-full bg-slate-100 select-text">
-        <div id="desktop-login" class="min-h-screen flex items-center justify-center p-6">
+        <div id="desktop-login" class="relative min-h-screen flex items-center justify-center p-6">
+            <div class="desktop-copyright absolute bottom-4 left-0 right-0 text-center text-[10px] text-slate-400"><span data-app-copyright></span></div>
             <button onclick="openDeviceDrawer()" class="fixed top-3 right-3 z-50 w-11 h-11 rounded-full bg-white border border-slate-200 shadow-md text-slate-600 hover:text-blue-600 flex items-center justify-center" aria-label="裝置設定">
                 <i class="fa-solid fa-gear"></i>
             </button>
@@ -38,7 +39,7 @@
                             <div class="flex items-center gap-2">
                                 <h1 id="desktop-title" class="text-lg font-extrabold truncate">CPR 即時監看</h1>
                                 <span id="desktop-live-badge" class="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold"><i class="fa-solid fa-circle text-[6px] mr-1"></i>即時同步</span>
-                                <span class="v17-version-pill">V18.1</span>
+                                <span class="v17-version-pill" data-app-version>V2</span>
                             </div>
                             <div id="desktop-role-label" class="text-xs text-slate-400"></div>
                         </div>
@@ -182,6 +183,9 @@
                     <div id="admin-section-content"><div class="text-center text-slate-400 py-10">讀取中...</div></div>
                 </div>
             </main>
+            <footer class="desktop-copyright max-w-[1500px] mx-auto px-5 pb-5 text-center text-[10px] text-slate-400">
+                <span data-app-copyright></span>
+            </footer>
         </div>
     </div>
 
@@ -487,7 +491,7 @@
             
             <!-- 版權宣告 (頁籤 1 底部) -->
             <div class="text-center text-[10px] text-slate-400 mt-2 pb-6">
-                Copyright &copy; MentoLi 2026｜V16.2<br>此版本非正式紀錄，僅促進急救時紀錄品質
+                <span data-app-copyright>Copyright &copy; MentoLi 20260930｜V2</span>
             </div>
         </div>
 
@@ -550,7 +554,7 @@
                 </button>
                 <!-- 版權宣告 -->
                 <div class="text-center text-[10px] text-slate-500 mt-2 leading-tight">
-                    Copyright &copy; MentoLi 2026｜V16.2<br>此版本非正式紀錄，僅促進急救時紀錄品質
+                    <span data-app-copyright>Copyright &copy; MentoLi 20260930｜V2</span>
                 </div>
             </div>
         </div>
@@ -704,7 +708,7 @@
                 <div class="w-12 h-12 mx-auto rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xl mb-2">
                     <i class="fa-solid fa-hospital"></i>
                 </div>
-                <h3 class="text-xl font-extrabold text-slate-800">設定此 iPad 使用單位</h3>
+                <h3 class="text-xl font-extrabold text-slate-800">設定此裝置使用單位</h3>
                 <p class="text-xs text-slate-500 mt-1">第一次設定後，此裝置會記住單位。急救時不需要登入。</p>
             </div>
             <div>
@@ -829,7 +833,7 @@
       </div>
     </div>
 
-    <!-- V18.1 裝置設定抽屜 -->
+    <!-- 裝置設定抽屜 -->
     <div id="device-drawer-backdrop" class="v176-drawer-backdrop hidden" onclick="closeDeviceDrawer()"></div>
     <aside id="device-drawer" class="v176-drawer" aria-hidden="true">
         <div class="v176-drawer-header">
@@ -870,9 +874,7 @@
         <div class="v176-warning">急救使用時建議將此裝置預設為「CPR紀錄」。變更單位不會刪除既有 CPR 資料。</div>
     </aside>
 
-        <script src="supabase-config.js?v=18.1.0"></script>
-    <script src="app.js?v=18.1.0"></script>
-
-    <div id="app-version-footer" class="text-center text-[10px] text-slate-400 py-2 select-text">CPRNOTE V18.1｜Gmail API通知・CPR治理・意見回覆・滿意度</div>
+        <script src="supabase-config.js?build=20260930-2"></script>
+    <script src="app.js?build=20260930-2"></script>
 </body>
 </html>

@@ -1,5 +1,5 @@
-// CPRNOTE V2.3 - 動態管路與主畫面圖示（基於 V2.2）
-const CPRNOTE_APP_VERSION = "2.3";
+// CPRNOTE V2.3.1 - 管路維護簡化與單位建立錯誤提示
+const CPRNOTE_APP_VERSION = "2.3.1";
 const CPRNOTE_RELEASE_DATE = "20261001";
 const CPRNOTE_COPYRIGHT_OWNER = "MentoLi";
 
@@ -2925,7 +2925,14 @@ function togglePasswordVisibility(inputId, iconId) {
 
 async function invokeV17UserAdmin(body) {
     const { data, error } = await supabaseClient.functions.invoke('cpr-user-admin', { body });
-    if(error) throw error;
+    if(error) {
+        let detail='',status=error.context?.status;
+        try {const payload=await error.context.clone().json();detail=typeof payload.error==='string'?payload.error:typeof payload.message==='string'?payload.message:'';}catch{}
+        if(/invalid jwt|jwt expired/i.test(detail)||status===401) detail='登入已失效，請重新登入後再試';
+        else if(/already.*registered|already.*exists|duplicate key/i.test(detail)) detail='帳號或單位代碼已存在，請改用其他代碼';
+        else if(!detail) detail=status===403?'目前帳號沒有此操作權限':status===404?'找不到帳號管理服務，請聯絡管理者確認部署':'帳號管理操作失敗，請聯絡管理者查看後端錯誤紀錄';
+        throw new Error(detail);
+    }
     if(data && data.error) throw new Error(data.error);
     return data;
 }
@@ -3208,7 +3215,7 @@ function adminBackFromUnitSettings(){
     switchDesktopView('admin');
 }
 
-async function adminCreateUnit(){const code=document.getElementById('admin-unit-code').value.trim().toUpperCase(),name=document.getElementById('admin-unit-name').value.trim()||code,p=document.getElementById('admin-unit-password').value;if(!code)return alertV17('請輸入單位代碼',true);if(p.length<8)return alertV17('初始密碼至少8碼',true);try{await invokeV17UserAdmin({action:'create_unit',unitCode:code,unitName:name,password:p});alertV17(`${code} 已建立`);loadAdminUnits();}catch(e){alertV17(e.message,true);}}
+async function adminCreateUnit(){const code=document.getElementById('admin-unit-code').value.trim().toUpperCase(),name=document.getElementById('admin-unit-name').value.trim()||code,p=document.getElementById('admin-unit-password').value;if(!code)return alertV17('請輸入單位代碼',true);if(!/^[A-Z0-9_-]{2,20}$/.test(code))return alertV17('單位代碼需為 2～20 個英文字母、數字、底線或連字號；單位名稱可使用中文',true);if(p.length<8)return alertV17('初始密碼至少8碼',true);const btn=document.querySelector('button[onclick="adminCreateUnit()"]');if(btn?.disabled)return;setV17ButtonBusy(btn,true,'建立中...');try{await invokeV17UserAdmin({action:'create_unit',unitCode:code,unitName:name,password:p});alertV17(`${code} 已建立`);await loadAdminUnits();}catch(e){alertV17(e.message,true);}finally{setV17ButtonBusy(btn,false);}}
 async function adminToggleUnit(id,isActive){const{error}=await supabaseClient.from('units').update({is_active:isActive,updated_at:new Date().toISOString()}).eq('id',id);if(error)return alertV17(error.message,true);loadAdminUnits();}
 
 async function loadAdminHeadNurses(){const root=adminRoot();root.innerHTML='<div class="text-center text-slate-400 py-10">讀取中...</div>';const [pr,ur]=await Promise.all([supabaseClient.from('profiles').select('*').eq('role','head_nurse').order('created_at',{ascending:false}),supabaseClient.from('units').select('id,code,name')]);if(pr.error)return root.innerHTML=`<div class="text-red-600">${escapeHtml(pr.error.message)}</div>`;const um=Object.fromEntries((ur.data||[]).map(u=>[u.id,u]));root.innerHTML=`<section class="v17-card p-5"><h2 class="font-extrabold text-lg mb-3">護理長帳號申請與權限</h2><div class="space-y-3">${(pr.data||[]).length?(pr.data||[]).map(p=>`<div class="border border-slate-200 rounded-xl p-4 flex items-center justify-between gap-4"><div><div class="font-extrabold">${escapeHtml(p.display_name||p.username)} <span class="text-xs text-slate-400">${escapeHtml(p.username)}</span></div><div class="text-sm text-slate-500">${escapeHtml(um[p.unit_id]?.code||'--')}｜員編 ${escapeHtml(p.employee_no||p.username||'--')}｜${p.contact_email?escapeHtml(p.contact_email)+'｜':''}狀態 ${escapeHtml(p.approval)}</div></div><div class="flex gap-2 flex-wrap justify-end">${p.approval!=='approved'?`<button onclick="adminSetHNApproval('${p.user_id}','approved')" class="px-3 py-2 bg-emerald-600 text-white rounded-lg text-sm font-bold">核准</button>`:''}${p.approval==='approved'?`<button onclick="adminSetHNApproval('${p.user_id}','disabled')" class="px-3 py-2 bg-amber-500 text-white rounded-lg text-sm font-bold">取消護理長權限</button>`:`<button onclick="adminSetHNApproval('${p.user_id}','disabled')" class="px-3 py-2 bg-slate-500 text-white rounded-lg text-sm font-bold">停用</button>`}<button onclick="adminDeleteHeadNurse('${p.user_id}')" class="px-3 py-2 bg-red-600 text-white rounded-lg text-sm font-bold">刪除帳號</button></div></div>`).join(''):'<div class="text-slate-400 py-6 text-center">目前沒有護理長申請</div>'}</div></section>`;}

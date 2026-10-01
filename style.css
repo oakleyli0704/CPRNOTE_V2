@@ -267,6 +267,14 @@
 .v23-hn-field{padding-top:14px;margin-top:14px;border-top:1px solid #e6edf5;}
 .v23-global-note{color:#2160a0;font-size:12px;margin:5px 0 8px;}
 .v23-hn-controls{margin-top:8px;}
+.v23-hn-preview-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:18px;}
+.v23-hn-preview-grid .v23-hn-field{padding:0;margin:0;border:0;min-width:0;}
+.v23-hn-default-note{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:11px;color:#64748b;margin-top:7px;}
+.v23-hn-default-note button{font-size:11px;}
+.v23-hn-order{font-size:12px;color:#64748b;border-top:1px solid #e6edf5;padding-top:12px;margin-top:18px;}
+.v23-hn-order .v17-input{max-width:140px;margin-top:8px;}
+.v23-tube-status[hidden]{display:none;}
+@media(max-width:520px){.v23-hn-preview-grid{grid-template-columns:1fr;}}
 .v23-hn-controls :disabled{background:#f0f4f8;color:#64748b;opacity:1;}
 .v23-invalid{color:#a13b16;font-size:11px;line-height:1.6;}
 .v23-clinical-field{font-size:12px;color:#54657b;display:block;}

@@ -219,9 +219,28 @@
 /* V2.3 管路卡片設計器 */
 .v23-login-logo{width:128px;height:128px;object-fit:contain;margin:0 auto 12px;}
 .v23-header-logo{width:62px;height:62px;object-fit:contain;background:white;border-radius:12px;flex-shrink:0;}
-.v23-designer-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:22px;}
-.v23-schema-row{border:1px solid #dae3ed;border-radius:12px;background:#f9fbfe;margin-top:14px;padding:14px;min-width:0;}
-.v23-field-head{display:flex;justify-content:space-between;gap:8px;align-items:center;margin-bottom:12px;color:#163b60;}
+.v23-workspace{display:grid;grid-template-columns:240px minmax(0,1fr);gap:24px;margin-top:20px;align-items:start;}
+.v23-tube-list{display:flex;flex-direction:column;border-top:1px solid #dae3ed;}
+.v23-tube-item{text-align:left;position:relative;border-bottom:1px solid #dae3ed;padding:14px 52px 14px 12px;color:#163b60;background:white;min-width:0;}
+.v23-tube-item strong,.v23-tube-item>span:not(.v23-edit-label){display:block;overflow-wrap:anywhere;}
+.v23-tube-item>span{font-size:12px;color:#64748b;margin-top:5px;}
+.v23-tube-item.v23-selected{background:#edf5ff;box-shadow:inset 3px 0 #2563eb;}
+.v23-edit-label{position:absolute;right:10px;top:14px;color:#2563eb!important;}
+.v23-editor-pane{min-width:0;border-left:1px solid #dae3ed;padding-left:24px;}
+.v23-editor-empty{padding:70px 20px;text-align:center;color:#64748b;background:#f8fafc;}
+.v23-designer-grid{display:block;margin-top:0!important;}
+.v23-designer-grid>[data-v18-tube]{border:0;background:white;padding:0;opacity:1;}
+.v23-designer-grid>[hidden],[data-field-body][hidden],.v23-editor-empty[hidden]{display:none!important;}
+.v23-schema-row{border-bottom:1px solid #dae3ed;background:white;margin-top:0;padding:12px 0;min-width:0;}
+.v23-field-head{display:flex;justify-content:space-between;gap:8px;align-items:center;color:#163b60;}
+.v23-field-toggle{display:flex;flex-direction:column;gap:5px;text-align:left;flex:1;min-width:0;padding:4px 0;overflow-wrap:anywhere;}
+.v23-field-toggle::before{content:'＋';font-size:12px;position:absolute;margin-left:-17px;color:#64748b;}
+.v23-field-toggle[aria-expanded=true]::before{content:'−';}
+.v23-field-toggle span{font-size:12px;color:#64748b;font-weight:400;}
+.v23-field-head{padding-left:18px;}
+.v23-setting-section{border-top:1px solid #edf1f5;margin-top:16px;padding-top:14px;}
+.v23-setting-section h3{font-size:12px;color:#334155;font-weight:700;margin-bottom:10px;}
+.v23-setting-section>.v17-input,.v23-setting-section>.v23-number-unit{max-width:420px;}
 .v23-row-actions{display:flex;gap:5px;flex-shrink:0;}
 .v23-row-actions button,.v23-option-row button,.v23-modal-head>button{background:#e8eef7;color:#315674;border-radius:7px;min-height:32px;padding:4px 9px;font-weight:700;font-size:12px;}
 .v23-editor-grid{display:grid;grid-template-columns:1.2fr 1.2fr 1fr;gap:10px;}
@@ -254,5 +273,5 @@
 .v23-clinical-field .v17-input{font-size:16px;font-weight:600;padding:9px;margin-top:4px;}
 .v23-tube-status{display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:10px;color:#8292a8;margin-bottom:7px;}
 .v23-tube-status button{color:#2873b7;font-weight:700;white-space:nowrap;}
-@media(max-width:1100px){.v23-designer-grid{grid-template-columns:1fr;}}
+@media(max-width:800px){.v23-workspace{grid-template-columns:1fr;gap:18px;}.v23-tube-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));}.v23-editor-pane{border-left:0;border-top:1px solid #dae3ed;padding:18px 0 0;}.v23-editor-empty{padding:30px 12px;}}
 @media(max-width:520px){.v23-editor-grid{grid-template-columns:1fr 1fr;}.v23-editor-grid label:last-child{grid-column:1/-1;}.v23-editor-bottom{grid-template-columns:1fr;}.v23-schema-row{padding:11px;}.v23-modal{padding:16px;}.v23-field-head{align-items:start;}.v23-header-logo{width:44px;height:44px;}.v23-clinical-field .v17-input{padding:8px;}}

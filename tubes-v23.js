@@ -1,6 +1,7 @@
 /* CPR NOTE V2.3 — incremental tube designer. Loaded after the unchanged V2.2 flows. */
 'use strict';
-const v23Types = {number:'數字輸入',select:'下拉選單',number_unit:'數字＋單位',text:'文字輸入'};
+const v23Types = {number:'數字輸入',select:'下拉選單',text:'文字輸入'};
+const v23TypeLabel = type => v23Types[type==='number_unit'?'number':type] || '文字輸入';
 const v23Clone = x => JSON.parse(JSON.stringify(x));
 const v23Attr = x => escapeHtml(String(x ?? ''));
 const v23Key = () => 'f_' + (crypto.randomUUID ? crypto.randomUUID().replace(/-/g,'') : Date.now().toString(36)+Math.random().toString(36).slice(2));
@@ -68,15 +69,19 @@ function v23SchemaRow(f) {
 function v23DrawSchemaRow(row) {
     const f=row._field, active=f.active!==false;
     row.classList.toggle('v23-field-off',!active);
-    row.innerHTML=`<div class="v23-field-head"><strong data-row-title>${v23Attr(f.label||'新增欄位')}</strong><div class="v23-row-actions"><button type="button" onclick="v23MoveField(this,-1)" aria-label="欄位上移">↑</button><button type="button" onclick="v23MoveField(this,1)" aria-label="欄位下移">↓</button><button type="button" onclick="v23ToggleField(this)">${active?'停用欄位':'恢復欄位'}</button></div></div>
-      <div class="v23-editor-grid"><label>顯示名稱<input class="v17-input" data-label value="${v23Attr(f.label)}"></label><label>輸入方式<select class="v17-input" data-type onchange="v23ChangeType(this)">${Object.entries(v23Types).map(([k,v])=>`<option value="${k}" ${k===f.type?'selected':''}>${v}</option>`).join('')}</select></label><label>${f.type==='number_unit'?'固定單位（不使用）':'固定單位（可留白）'}<input class="v17-input" data-unit value="${v23Attr(f.unit)}" ${f.type==='number_unit'?'disabled':''} placeholder="例如 Fr、mm、G"></label></div>
-      <div class="v23-editor-bottom"><div><label class="v17-label">全院預設</label>${v23Controls(f,v23Default(f),'v23-global-'+row.dataset.v23ControlId,'data-global-default')}</div><div class="v23-options-summary">${f.type==='select'||f.type==='number_unit'?`<div>${f.type==='select'?'選項':'可用單位'}：${v23Options(f,f.type==='number_unit').filter(o=>o.active).map(o=>v23Attr(o.label)).join('、')||'尚未設定'}</div><button type="button" class="v23-link" onclick="v23OpenOptions(this)">管理${f.type==='select'?'選項':'單位'}與排序</button>`:'<div>護理師可直接輸入</div>'}${f.type==='select'?`<label class="v23-check"><input type="checkbox" data-numeric ${f.value_type==='number'?'checked':''}>選項是數字（例如 Fr、號數）</label>`:''}<label class="v23-check"><input type="checkbox" data-required ${f.required?'checked':''}>必填</label></div></div>
-      <details class="v23-code"><summary>系統代碼</summary><input class="v17-input v22-code-locked" data-key readonly value="${v23Attr(f.key)}"><small>代碼由系統產生，用於保留單位設定與歷史資料。</small></details>`;
+    row.innerHTML=`<div class="v23-field-head"><button type="button" class="v23-field-toggle" onclick="v23ExpandField(this)" aria-expanded="${row._expanded?'true':'false'}" aria-controls="v23-body-${row.dataset.v23ControlId}"><strong data-row-title>${v23Attr(f.label||'新增欄位')}</strong><span data-row-summary>${v23Attr(v23FieldSummary(f))}</span></button><div class="v23-row-actions"><button type="button" onclick="v23MoveField(this,-1)" aria-label="欄位上移" title="欄位上移">↑</button><button type="button" onclick="v23MoveField(this,1)" aria-label="欄位下移" title="欄位下移">↓</button><button type="button" onclick="v23ToggleField(this)">${active?'停用欄位':'恢復欄位'}</button></div></div>
+      <div data-field-body id="v23-body-${row.dataset.v23ControlId}" ${row._expanded?'':'hidden'}><div class="v23-setting-section"><h3>基本資料</h3><div class="v23-editor-grid"><label>欄位名稱<input class="v17-input" data-label value="${v23Attr(f.label)}"></label><label>輸入方式<select class="v17-input" data-type onchange="v23ChangeType(this)">${Object.entries(v23Types).map(([k,v])=>`<option value="${k==='number'&&f.type==='number_unit'?'number_unit':k}" ${(f.type==='number_unit'?'number':f.type)===k?'selected':''}>${v}</option>`).join('')}</select></label><label>${f.type==='number_unit'?'可用單位':'單位（可留白）'}<input class="v17-input" data-unit value="${v23Attr(f.type==='number_unit'?v23Options(f,true).filter(o=>o.active).map(o=>o.label).join('、'):f.unit)}" ${f.type==='number_unit'?'readonly':''} placeholder="例如 cm、mm、Fr">${f.type==='number_unit'?'<button type="button" class="v23-link" onclick="v23OpenOptions(this)">管理單位與排序</button>':''}</label></div></div>
+      <div class="v23-setting-section"><h3>預設內容</h3><label class="v17-label">全院預設值</label>${v23Controls(f,v23Default(f),'v23-global-'+row.dataset.v23ControlId,'data-global-default')}${f.type==='select'?`<div class="v23-options-summary"><div>選項：${v23Options(f).filter(o=>o.active).map(o=>v23Attr(o.label)).join('、')||'尚未設定'}</div><button type="button" class="v23-link" onclick="v23OpenOptions(this)">管理選項與排序</button><label class="v23-check"><input type="checkbox" data-numeric ${f.value_type==='number'?'checked':''}>選項是數字（例如 Fr、號數）</label></div>`:''}</div>
+      <div class="v23-setting-section"><h3>填寫規則</h3><label class="v23-check"><input type="checkbox" data-required ${f.required?'checked':''}>此欄位必填</label></div>
+      <details class="v23-code"><summary>系統代碼</summary><input class="v17-input v22-code-locked" data-key readonly value="${v23Attr(f.key)}"></details></div>`;
 }
+function v23FieldSummary(f){return `${v23TypeLabel(f.type)} · 預設 ${v23Describe(f,v23Default(f))} · ${f.active===false?'停用':f.required?'必填':'選填'}`;}
+function v23ExpandField(el){const row=el.closest('[data-schema-row]'),open=!row._expanded;row.parentNode.querySelectorAll('[data-schema-row]').forEach(r=>{r._expanded=false;r.querySelector('[data-field-body]').hidden=true;r.querySelector('.v23-field-toggle').setAttribute('aria-expanded','false');});row._expanded=open;row.querySelector('[data-field-body]').hidden=!open;el.setAttribute('aria-expanded',String(open));}
 function v23ReadRow(row,validate=true) {
     const f={...row._field,key:row.querySelector('[data-key]').value,label:row.querySelector('[data-label]').value.trim(),type:row.querySelector('[data-type]').value,unit:row.querySelector('[data-unit]').value.trim(),required:row.querySelector('[data-required]').checked};
     f.value_type=row.querySelector('[data-numeric]')?.checked ? 'number' : (f.type==='number'||f.type==='number_unit'?'number':'text');
-    f.default=validate ? v23ReadControl(f,'v23-global-'+row.dataset.v23ControlId,row) : v23Default(f);
+    if(validate) f.default=v23ReadControl(f,'v23-global-'+row.dataset.v23ControlId,row);
+    else {try{f.default=v23ReadControl(row._field,'v23-global-'+row.dataset.v23ControlId,row);}catch{f.default=v23Default(row._field);}}
     if(validate) {
         if(!f.label)throw new Error('欄位顯示名稱必填');
         if(!/^[a-zA-Z0-9_-]+$/.test(f.key))throw new Error('欄位系統代碼只能使用英數字、底線或連字號');
@@ -86,7 +91,7 @@ function v23ReadRow(row,validate=true) {
     if(f.type==='number_unit') f.unit='';
     return f;
 }
-function v23Mark(el) {v18MarkAdminCard(el);}
+function v23Mark(el) {v18MarkAdminCard(el);v23RefreshTubeList();}
 function v23ChangeType(el) {
     const row=el.closest('[data-schema-row]');const old=row._field;
     const current=row.querySelector('[data-global-default]')?.value??'';
@@ -101,7 +106,7 @@ function v23ToggleField(el) {
     try {row._field=v23ReadRow(row);row._field.active=row._field.active===false;v23DrawSchemaRow(row);v23Mark(row);}catch(e){alertV17(e.message,true);}
 }
 v22TubeFieldHeader=()=>'<p class="v17-section-note">欄位依上到下顯示；↑↓調整順位。停用會保留歷史紀錄，儲存後生效。</p>';
-v18FieldRows=function(t){return (t.field_schema||[]).map(f=>v23SchemaRow({...f,type:v23Types[f.type]?f.type:'text'}).outerHTML).join('');};
+v18FieldRows=function(t){return (t.field_schema||[]).map(f=>v23SchemaRow({...f,type:v23Types[f.type]||f.type==='number_unit'?f.type:'text'}).outerHTML).join('');};
 // outerHTML cannot carry JS properties; hydrate from the returned master data below.
 const v23OriginalAdminLoad=loadAdminTubesBlood;
 loadAdminTubesBlood=async function(){
@@ -114,21 +119,25 @@ loadAdminTubesBlood=async function(){
     if(code) {code.placeholder='留白由系統產生';code.previousElementSibling.textContent='管路代碼（可留白）';}
     root.querySelectorAll('[data-v18-tube]').forEach(card=>{
         const t=data.find(t=>String(t.id)===card.dataset.v18Tube);if(!t)return;
-        const box=card.querySelector('[id^="v18-tube-fields-"]');box.replaceChildren(...(t.field_schema||[]).map(f=>v23SchemaRow({...f,type:v23Types[f.type]?f.type:'text'})));
+        const box=card.querySelector('[id^="v18-tube-fields-"]');box.replaceChildren(...(t.field_schema||[]).map(f=>v23SchemaRow({...f,type:v23Types[f.type]||f.type==='number_unit'?f.type:'text'})));
         card.closest('.v177-card-grid')?.classList.add('v23-designer-grid');
         card.insertAdjacentHTML('beforeend',`<div class="v17-actions"><button class="v17-btn v17-btn-secondary" onclick="v23PreviewTube(this)">預覽前端</button><button class="v17-btn v17-btn-primary" onclick="saveAllV18Tubes(this,'${v23Attr(t.id)}')">儲存 ${v23Attr(t.name)}</button></div>`);
     });
+    const grid=root.querySelector('.v23-designer-grid');
+    if(grid){const workspace=document.createElement('div');workspace.className='v23-workspace';grid.before(workspace);workspace.innerHTML='<div class="v23-tube-list" aria-label="管路清單"></div><div class="v23-editor-pane"><div class="v23-editor-empty">選擇管路開始編輯</div></div>';workspace.querySelector('.v23-editor-pane').appendChild(grid);grid.querySelectorAll('[data-v18-tube]').forEach(card=>card.hidden=true);v23RefreshTubeList();}
     root.addEventListener('input',v23AdminDirty);root.addEventListener('change',v23AdminDirty);
 };
-function v23AdminDirty(e) {if(e.target.closest('[data-v18-tube]')){v23Mark(e.target);const row=e.target.closest('[data-schema-row]');if(row&&e.target.hasAttribute('data-label')) row.querySelector('[data-row-title]').textContent=e.target.value||'新增欄位';}}
-v18AddTubeField=function(id){const box=document.getElementById(`v18-tube-fields-${id}`);if(!box)return;box.appendChild(v23SchemaRow({key:v23Key(),label:'',type:'number',default:'',active:true}));v23Mark(box);};
+function v23RefreshTubeList(){const root=adminRoot(),list=root.querySelector('.v23-tube-list');if(!list)return;list.innerHTML=[...root.querySelectorAll('[data-v18-tube]')].map(card=>{const id=card.dataset.v18Tube,name=card.querySelector('[id^="tube-name-"]').value,active=card.querySelector('[id^="tube-active-"]').checked,count=[...card.querySelectorAll('[data-schema-row]')].filter(r=>r._field.active!==false).length;return `<button type="button" class="v23-tube-item ${card.hidden?'':'v23-selected'}" data-edit-tube="${v23Attr(id)}" onclick="v23EditTube(this.dataset.editTube)" aria-pressed="${!card.hidden}"><strong>${v23Attr(name||'未命名管路')}</strong><span>${count} 個欄位 · ${active?'啟用':'停用'}${card.dataset.v18Dirty==='1'?' · 未儲存':''}</span><span class="v23-edit-label">編輯 →</span></button>`;}).join('')||'<p class="v17-section-note">尚未新增管路</p>';}
+function v23EditTube(id){const root=adminRoot();root.querySelectorAll('[data-v18-tube]').forEach(card=>card.hidden=card.dataset.v18Tube!==id);root.querySelector('.v23-editor-empty').hidden=true;v23RefreshTubeList();if(matchMedia('(max-width:800px)').matches)root.querySelector(`[data-v18-tube="${id}"]`)?.scrollIntoView({behavior:'smooth',block:'start'});}
+function v23AdminDirty(e) {if(e.target.closest('[data-v18-tube]')){v23Mark(e.target);const row=e.target.closest('[data-schema-row]');if(row){row.querySelector('[data-row-title]').textContent=row.querySelector('[data-label]').value||'新增欄位';row.querySelector('[data-row-summary]').textContent=v23FieldSummary(v23ReadRow(row,false));}}}
+v18AddTubeField=function(id){const box=document.getElementById(`v18-tube-fields-${id}`);if(!box)return;const row=v23SchemaRow({key:v23Key(),label:'',type:'number',default:'',active:true});box.appendChild(row);v23ExpandField(row.querySelector('.v23-field-toggle'));row.querySelector('[data-label]').focus();v23Mark(box);};
 adminAddTube=async function(){
     if(desktopProfile?.role!=='admin')return;
     const name=document.getElementById('admin-tube-name').value.trim(),code=document.getElementById('admin-tube-code').value.trim().toLowerCase()||'tube_'+v23Key();
     if(!name||!/^[a-z0-9_-]+$/.test(code))return alertV17('請填管路名稱；代碼可留白，或使用英數字、底線、連字號',true);
     if(document.querySelector('[data-v18-dirty="1"]'))return alertV17('請先儲存目前變更，再新增管路',true);
     const {error}=await supabaseClient.from('tube_types').insert({code,name,sort_order:Number(document.getElementById('admin-tube-sort').value)||v17NextTubeSort,field_schema:[],is_active:false});
-    if(error)return alertV17(error.message,true);alertV17(`${name} 已新增為停用，請完成欄位後啟用`);await loadAdminTubesBlood();
+    if(error)return alertV17(error.message,true);alertV17(`${name} 已新增為停用，請完成欄位後啟用`);await loadAdminTubesBlood();const added=[...adminRoot().querySelectorAll('[data-v18-tube]')].find(card=>card.querySelector('[id^="tube-name-"]').value===name);if(added)v23EditTube(added.dataset.v18Tube);
 };
 saveAllV18Tubes=async function(btn,onlyId){
     if(desktopProfile?.role!=='admin')return;
@@ -145,7 +154,7 @@ saveAllV18Tubes=async function(btn,onlyId){
             return {card,id,payload:{name,sort_order:sort,is_active:active,field_schema:schema}};
         });
         for(const item of items){const {error}=await supabaseClient.from('tube_types').update(item.payload).eq('id',item.id);if(error)throw error;item.card.dataset.v18Dirty='0';}
-        v18MarkAdminCard(document.createElement('div'));alertV17(`管路設定已更新，共 ${items.length} 項；下次 CPR 載入新設定`);
+        v18MarkAdminCard(document.createElement('div'));v23RefreshTubeList();alertV17(`管路設定已更新，共 ${items.length} 項；下次 CPR 載入新設定`);
         // Do not reload the whole page: preserve unsaved cards and blood settings.
     }catch(e){alertV17(`儲存失敗：${e.message}；尚未儲存的卡片仍保留`,true);}finally{setV17ButtonBusy(btn,false);}
 };

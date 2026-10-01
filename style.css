@@ -215,3 +215,44 @@
   .v22-field-schema{grid-template-columns:minmax(0,1fr) minmax(0,1fr) 42px;}
   .v22-field-schema [data-type],.v22-field-schema [data-unit],.v22-field-schema [data-default]{min-width:0;}
 }
+
+/* V2.3 管路卡片設計器 */
+.v23-login-logo{width:128px;height:128px;object-fit:contain;margin:0 auto 12px;}
+.v23-header-logo{width:62px;height:62px;object-fit:contain;background:white;border-radius:12px;flex-shrink:0;}
+.v23-designer-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:22px;}
+.v23-schema-row{border:1px solid #dae3ed;border-radius:12px;background:#f9fbfe;margin-top:14px;padding:14px;min-width:0;}
+.v23-field-head{display:flex;justify-content:space-between;gap:8px;align-items:center;margin-bottom:12px;color:#163b60;}
+.v23-row-actions{display:flex;gap:5px;flex-shrink:0;}
+.v23-row-actions button,.v23-option-row button,.v23-modal-head>button{background:#e8eef7;color:#315674;border-radius:7px;min-height:32px;padding:4px 9px;font-weight:700;font-size:12px;}
+.v23-editor-grid{display:grid;grid-template-columns:1.2fr 1.2fr 1fr;gap:10px;}
+.v23-editor-grid label,.v23-preview-grid label{font-size:12px;font-weight:700;color:#526780;display:block;}
+.v23-editor-grid .v17-input,.v23-preview-grid .v17-input{margin-top:5px;}
+.v23-editor-bottom{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start;margin-top:14px;}
+.v23-number-unit{display:grid;grid-template-columns:minmax(0,1fr) minmax(75px,.8fr);gap:7px;}
+.v23-options-summary{font-size:12px;color:#526780;line-height:1.8;}
+.v23-link{color:#1762cb;text-decoration:underline;font-size:12px;font-weight:700;}
+.v23-check{display:flex;gap:7px;align-items:center;font-size:12px;margin-top:6px;}
+.v23-check input{accent-color:#2563eb;}
+.v23-code{font-size:11px;color:#8192a8;margin-top:10px;}
+.v23-code .v17-input{font-size:11px;max-width:290px;margin:6px 0;}
+.v23-code small{display:block;}
+.v23-field-off{opacity:.65;background:#edf0f4;}
+.v23-modal{border:0;border-radius:18px;width:min(660px,calc(100% - 28px));max-height:85dvh;overflow:auto;padding:24px;box-shadow:0 24px 70px #0b274050;}
+.v23-modal::backdrop{background:#0f213b80;}
+.v23-modal-head{display:flex;justify-content:space-between;gap:15px;margin-bottom:18px;align-items:start;}
+.v23-modal-head h2{font-size:19px;font-weight:800;color:#143657;}
+.v23-modal-head p{font-size:12px;color:#73849c;margin-top:6px;}
+.v23-option-row{display:grid;grid-template-columns:22px minmax(0,1fr) 32px 32px 48px;gap:6px;align-items:center;margin-bottom:9px;}
+.v23-option-row span{font-size:12px;color:#64748b;}
+.v23-preview-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+.v23-hn-field{padding-top:14px;margin-top:14px;border-top:1px solid #e6edf5;}
+.v23-global-note{color:#2160a0;font-size:12px;margin:5px 0 8px;}
+.v23-hn-controls{margin-top:8px;}
+.v23-hn-controls :disabled{background:#f0f4f8;color:#64748b;opacity:1;}
+.v23-invalid{color:#a13b16;font-size:11px;line-height:1.6;}
+.v23-clinical-field{font-size:12px;color:#54657b;display:block;}
+.v23-clinical-field .v17-input{font-size:16px;font-weight:600;padding:9px;margin-top:4px;}
+.v23-tube-status{display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:10px;color:#8292a8;margin-bottom:7px;}
+.v23-tube-status button{color:#2873b7;font-weight:700;white-space:nowrap;}
+@media(max-width:1100px){.v23-designer-grid{grid-template-columns:1fr;}}
+@media(max-width:520px){.v23-editor-grid{grid-template-columns:1fr 1fr;}.v23-editor-grid label:last-child{grid-column:1/-1;}.v23-editor-bottom{grid-template-columns:1fr;}.v23-schema-row{padding:11px;}.v23-modal{padding:16px;}.v23-field-head{align-items:start;}.v23-header-logo{width:44px;height:44px;}.v23-clinical-field .v17-input{padding:8px;}}

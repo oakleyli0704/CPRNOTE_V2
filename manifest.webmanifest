@@ -1,0 +1,26 @@
+{
+  "id": "./",
+  "name": "CPR NOTE",
+  "short_name": "CPR NOTE",
+  "lang": "zh-TW",
+  "description": "CPR 快速紀錄與即時監看",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "theme_color": "#062b55",
+  "background_color": "#ffffff",
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

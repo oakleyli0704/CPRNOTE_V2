@@ -3,11 +3,19 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>CPR 快速紀錄-V2.2</title>
+    <title>CPR NOTE｜V2.3</title>
+    <meta name="theme-color" content="#062b55">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="CPR NOTE">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <link rel="manifest" href="manifest.webmanifest?build=20261001-23">
+    <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="style.css?build=20260930-22">
+    <link rel="stylesheet" href="style.css?build=20261001-23">
 </head>
 <body class="bg-slate-100 min-h-screen flex flex-col font-sans text-slate-800 select-none pb-[80px]">
 
@@ -20,7 +28,7 @@
                 <i class="fa-solid fa-gear"></i>
             </button>
             <div id="desktop-login-card" class="w-full max-w-md bg-white rounded-2xl shadow-xl border border-slate-200 p-7">
-                <div class="text-center mb-6"><div class="w-14 h-14 mx-auto rounded-2xl bg-blue-100 text-blue-600 flex items-center justify-center text-2xl mb-3"><i class="fa-solid fa-heart-pulse"></i></div><h1 class="text-2xl font-extrabold text-slate-800">CPR 即時監看</h1><p class="text-sm text-slate-500 mt-1">單位、護理長與管理者皆由此登入</p></div>
+                <div class="text-center mb-6"><img src="icons/logo-full.png" class="v23-login-logo" alt="CPR NOTE"><h1 class="text-2xl font-extrabold text-slate-800">CPR 即時監看</h1><p class="text-sm text-slate-500 mt-1">單位、護理長與管理者皆由此登入</p></div>
                 <div class="space-y-4"><div><label class="block text-sm font-bold text-slate-600 mb-1">帳號</label><input id="desktop-username" type="text" autocomplete="username" placeholder="請輸入帳號" class="w-full p-3 border-2 border-slate-200 rounded-xl font-bold uppercase focus:outline-none focus:border-blue-400"></div><div><label class="block text-sm font-bold text-slate-600 mb-1">密碼</label><div class="relative"><input id="desktop-password" type="password" autocomplete="current-password" placeholder="請輸入密碼" class="w-full p-3 pr-12 border-2 border-slate-200 rounded-xl font-bold focus:outline-none focus:border-blue-400"><button type="button" onclick="togglePasswordVisibility('desktop-password','desktop-password-eye')" class="absolute right-1 top-1 bottom-1 w-10 text-slate-500 hover:text-blue-600" aria-label="顯示或隱藏密碼"><i id="desktop-password-eye" class="fa-solid fa-eye-slash"></i></button></div></div><div id="desktop-login-error" class="hidden bg-red-50 border border-red-200 text-red-700 text-sm font-bold p-3 rounded-xl"></div><button id="desktop-login-btn" onclick="desktopLogin()" class="w-full py-3.5 bg-blue-600 text-white rounded-xl font-bold text-base btn-active shadow-sm"><i class="fa-solid fa-right-to-bracket mr-1"></i> 登入</button><button type="button" onclick="showHeadNurseRegister(true)" class="w-full py-2.5 bg-white text-blue-700 border border-blue-200 rounded-xl font-bold text-sm btn-active"><i class="fa-solid fa-user-plus mr-1"></i> 護理長申請帳號</button></div>
                 <p class="text-[11px] text-slate-400 text-center mt-5">CPR 臨床紀錄在後台一律唯讀；護理長與管理者僅能依權限調整系統設定。</p>
             </div>
@@ -34,12 +42,12 @@
             <header class="sticky top-0 z-40 bg-slate-900 text-white shadow-lg">
                 <div class="max-w-[1500px] mx-auto px-5 py-3 flex items-center justify-between gap-4">
                     <div class="flex items-center gap-3 min-w-0">
-                        <div class="w-10 h-10 rounded-xl bg-red-500/20 text-red-300 flex items-center justify-center shrink-0"><i class="fa-solid fa-heart-pulse"></i></div>
+                        <img src="icons/logo-full.png" class="v23-header-logo" alt="CPR NOTE">
                         <div class="min-w-0">
                             <div class="flex items-center gap-2">
                                 <h1 id="desktop-title" class="text-lg font-extrabold truncate">CPR 即時監看</h1>
                                 <span id="desktop-live-badge" class="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold"><i class="fa-solid fa-circle text-[6px] mr-1"></i>即時同步</span>
-                                <span class="v17-version-pill" data-app-version>V2.2</span>
+                                <span class="v17-version-pill" data-app-version>V2.3</span>
                             </div>
                             <div id="desktop-role-label" class="text-xs text-slate-400"></div>
                         </div>
@@ -493,7 +501,7 @@
             
             <!-- 版權宣告 (頁籤 1 底部) -->
             <div class="text-center text-[10px] text-slate-400 mt-2 pb-6">
-                <span data-app-copyright>Copyright &copy; MentoLi 20260930｜V2.2</span>
+                <span data-app-copyright>Copyright &copy; MentoLi 20260930｜V2.3</span>
             </div>
         </div>
 
@@ -556,7 +564,7 @@
                 </button>
                 <!-- 版權宣告 -->
                 <div class="text-center text-[10px] text-slate-500 mt-2 leading-tight">
-                    <span data-app-copyright>Copyright &copy; MentoLi 20260930｜V2.2</span>
+                    <span data-app-copyright>Copyright &copy; MentoLi 20260930｜V2.3</span>
                 </div>
             </div>
         </div>
@@ -835,7 +843,7 @@
       </div>
     </div>
 
-    <!-- V2.2 版本更新內容 Modal -->
+    <!-- V2.3 版本更新內容 Modal -->
     <div id="release-notes-modal" class="v18-modal-backdrop hidden">
       <div class="v18-modal-card v22-release-modal">
         <div class="v18-modal-head">
@@ -846,7 +854,7 @@
       </div>
     </div>
 
-    <!-- V2.2 護理長密碼重設 Modal -->
+    <!-- V2.3 護理長密碼重設 Modal -->
     <div id="hn-password-modal" class="v18-modal-backdrop hidden">
       <div class="v18-modal-card">
         <div class="v18-modal-head"><div><h3>重設護理長密碼</h3><p id="hn-password-target">--</p></div><button onclick="closeHNPasswordModal()" class="v18-icon-btn"><i class="fa-solid fa-xmark"></i></button></div>
@@ -900,7 +908,7 @@
         <div class="v176-section">
             <div class="v176-label">系統資訊</div>
             <div class="v176-info-card !mt-0">
-                <div class="v176-info-row"><span>目前版本</span><strong data-app-version>V2.2</strong></div>
+                <div class="v176-info-row"><span>目前版本</span><strong data-app-version>V2.3</strong></div>
             </div>
             <button onclick="showPublishedReleaseNotes()" class="v176-secondary-btn mt-3"><i class="fa-solid fa-clock-rotate-left"></i><span>版本更新內容</span></button>
         </div>
@@ -908,7 +916,9 @@
         <div class="v176-warning">急救使用時建議將此裝置預設為「CPR紀錄」。變更單位不會刪除既有 CPR 資料。</div>
     </aside>
 
-        <script src="supabase-config.js?build=20260930-22"></script>
-    <script src="app.js?build=20260930-22"></script>
+        <script src="supabase-config.js?build=20261001-23"></script>
+    <script src="app.js?build=20261001-23"></script>
+    <script src="tubes-v23.js?build=20261001-23"></script>
+    <script src="pwa.js?build=20261001-23"></script>
 </body>
 </html>
